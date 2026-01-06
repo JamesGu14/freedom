@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from app.data.duckdb_store import list_industries, list_stock_basic, replace_stock_basic
+from app.data.duckdb_store import (
+    get_stock_basic_by_code,
+    list_adj_factor,
+    list_daily,
+    list_industries,
+    list_stock_basic,
+    replace_stock_basic,
+)
 from app.data.tushare_client import fetch_stock_basic
 
 
@@ -29,3 +36,15 @@ def get_stock_basic(
 
 def get_industries() -> list[str]:
     return list_industries()
+
+
+def get_daily(ts_code: str) -> list[dict[str, object]]:
+    return list_daily(ts_code)
+
+
+def get_adj_factor(ts_code: str) -> list[dict[str, object]]:
+    return list_adj_factor(ts_code)
+
+
+def get_stock_basic_by_ts_code(ts_code: str) -> dict[str, object] | None:
+    return get_stock_basic_by_code(ts_code)

@@ -63,8 +63,6 @@ def pull_history(
 
 def main() -> None:
     args = parse_args()
-    if not settings.tushare_token:
-        raise SystemExit("TUSHARE_TOKEN is required")
 
     end_date = normalize_date(args.end_date)
     override_start = args.start_date or ""
@@ -74,7 +72,7 @@ def main() -> None:
     if not stock_list:
         raise SystemExit("No stock_basic data available")
 
-    pro = ts.pro_api(settings.tushare_token)
+    pro = ts.pro_api("e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e")
 
     for idx, (ts_code, list_date) in enumerate(stock_list, start=1):
         start_date = override_start or list_date

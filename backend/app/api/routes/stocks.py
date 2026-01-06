@@ -2,7 +2,14 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.services.stocks_service import get_industries, get_stock_basic, sync_stock_basic
+from app.services.stocks_service import (
+    get_adj_factor,
+    get_daily,
+    get_industries,
+    get_stock_basic,
+    get_stock_basic_by_ts_code,
+    sync_stock_basic,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -45,8 +52,18 @@ def sync_stocks() -> dict[str, int]:
 
 
 @router.get("/stocks/{ts_code}/candles")
-def get_candles(ts_code: str) -> dict[str, str]:
-    return {"ts_code": ts_code}
+def get_candles(ts_code: str) -> dict[str, object]:
+    daily = get_daily(ts_code)
+    adj_factor = get_adj_factor(ts_code)
+    return {"ts_code": ts_code, "daily": daily, "adj_factor": adj_factor}
+
+
+@router.get("/stocks/{ts_code}/basic")
+def get_basic(ts_code: str) -> dict[str, object]:
+    data = get_stock_basic_by_ts_code(ts_code)
+    if not data:
+        raise HTTPException(status_code=404, detail="Stock not found")
+    return data
 
 
 @router.get("/stocks/{ts_code}/features")

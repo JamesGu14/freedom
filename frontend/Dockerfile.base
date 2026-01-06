@@ -7,5 +7,5 @@ RUN npm install -g cnpm --registry=https://registry.npmmirror.com
 
 # 只复制依赖文件并安装依赖
 COPY package.json /app/
-RUN cnpm install
+RUN cnpm install --registry=https://registry.npmmirror.com
 

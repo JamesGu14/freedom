@@ -114,3 +114,44 @@ def upsert_adj_factor(df: pd.DataFrame) -> int:
             """
         )
         return df.shape[0]
+
+
+def list_daily(ts_code: str) -> list[dict[str, object]]:
+    query = (
+        "SELECT ts_code, trade_date, open, high, low, close, vol, amount "
+        "FROM daily WHERE ts_code = ? ORDER BY trade_date"
+    )
+    with get_connection() as con:
+        try:
+            rows = con.execute(query, [ts_code]).fetchdf()
+        except duckdb.CatalogException:
+            return []
+    return rows.to_dict(orient="records")
+
+
+def list_adj_factor(ts_code: str) -> list[dict[str, object]]:
+    query = (
+        "SELECT ts_code, trade_date, adj_factor "
+        "FROM adj_factor WHERE ts_code = ? ORDER BY trade_date"
+    )
+    with get_connection() as con:
+        try:
+            rows = con.execute(query, [ts_code]).fetchdf()
+        except duckdb.CatalogException:
+            return []
+    return rows.to_dict(orient="records")
+
+
+def get_stock_basic_by_code(ts_code: str) -> dict[str, object] | None:
+    query = (
+        "SELECT ts_code, name, industry, market "
+        "FROM stock_basic WHERE ts_code = ? LIMIT 1"
+    )
+    with get_connection() as con:
+        try:
+            row = con.execute(query, [ts_code]).fetchone()
+        except duckdb.CatalogException:
+            return None
+    if not row:
+        return None
+    return {"ts_code": row[0], "name": row[1], "industry": row[2], "market": row[3]}

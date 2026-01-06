@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
@@ -173,12 +174,13 @@ export default function Home() {
                 <th>行业</th>
                 <th>市场</th>
                 <th>上市日期</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody className={loading ? "loading" : ""}>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="empty">
+                  <td colSpan="6" className="empty">
                     <div className="empty-state">
                       <span className="empty-icon">📊</span>
                       <p>暂无数据</p>
@@ -206,6 +208,11 @@ export default function Home() {
                       )}
                     </td>
                     <td>{item.list_date || "-"}</td>
+                    <td>
+                      <Link className="link-button" href={`/stocks/${item.ts_code}`}>
+                        查看K线
+                      </Link>
+                    </td>
                   </tr>
                 ))
               )}
