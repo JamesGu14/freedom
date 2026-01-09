@@ -37,7 +37,7 @@
 ```mermaid
 flowchart LR
   A[TuShare API] --> B[APScheduler Jobs<br/>pull + update]
-  B --> C[Raw Parquet Store<br/>partitioned by trade_date]
+  B --> C[Raw Parquet Store<br/>partitioned by ts_code/year]
   C --> D[Feature Pipeline<br/>indicators/factors]
   D --> E[(DuckDB Feature Store)]
 
@@ -73,7 +73,7 @@ flowchart LR
 
 触发：每个交易日盘后（建议 16:30~18:00），以交易日历为准。
 输入：TuShare token、交易日 trade_date。
-输出：按日增量写入 Parquet，必要时写入 DuckDB 索引表。
+输出：按日增量写入 Parquet（ts_code/year 分区），必要时写入 DuckDB 索引表。
 
 采集内容（建议最小集）：
 
@@ -224,7 +224,7 @@ K 线（前复权/后复权切换可后续）
 ```bash
 data/
   raw/
-    daily/trade_date=YYYYMMDD/part-*.parquet
+    daily/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
     daily_basic/trade_date=YYYYMMDD/part-*.parquet
     adj_factor/trade_date=YYYYMMDD/part-*.parquet
     stock_basic/part-*.parquet
