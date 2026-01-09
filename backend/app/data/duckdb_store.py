@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import duckdb
 import pandas as pd
+import uuid
+from pathlib import Path
 
 from app.core.config import settings
 
@@ -71,7 +73,7 @@ def list_industries() -> list[str]:
     with get_connection() as con:
         try:
             rows = con.execute(query).fetchall()
-        except duckdb.CatalogException:
+        except (duckdb.CatalogException, duckdb.IOException):
             return []
     return [row[0] for row in rows]
 
@@ -80,20 +82,54 @@ def upsert_daily(df: pd.DataFrame) -> int:
     if df.empty:
         return 0
 
-    with get_connection() as con:
-        con.register("df", df)
-        con.execute("CREATE TABLE IF NOT EXISTS daily AS SELECT * FROM df WHERE 1=0")
-        con.execute(
-            """
-            INSERT INTO daily
-            SELECT df.*
-            FROM df
-            LEFT JOIN daily d
-              ON d.ts_code = df.ts_code AND d.trade_date = df.trade_date
-            WHERE d.ts_code IS NULL
-            """
-        )
-        return df.shape[0]
+    if "ts_code" not in df.columns or "trade_date" not in df.columns:
+        raise ValueError("daily data must include ts_code and trade_date")
+
+    daily_base = settings.data_dir / "raw" / "daily"
+    daily_base.mkdir(parents=True, exist_ok=True)
+
+    data = df.copy()
+    data["trade_date"] = data["trade_date"].astype(str)
+    data["year"] = data["trade_date"].str[:4]
+
+    inserted = 0
+    for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
+        partition_dir = daily_base / f"ts_code={ts_code}" / f"year={year}"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+        part_glob = str(partition_dir / "part-*.parquet")
+
+        incoming_dates = group["trade_date"].unique()
+        existing_dates: set[str] = set()
+        if any(partition_dir.glob("part-*.parquet")):
+            with get_connection() as con:
+                con.register(
+                    "incoming_dates",
+                    pd.DataFrame({"trade_date": incoming_dates}),
+                )
+                try:
+                    rows = con.execute(
+                        """
+                        SELECT DISTINCT p.trade_date
+                        FROM read_parquet(?) AS p
+                        JOIN incoming_dates d ON p.trade_date = d.trade_date
+                        """,
+                        [part_glob],
+                    ).fetchall()
+                    existing_dates = {row[0] for row in rows}
+                except Exception:
+                    existing_dates = set()
+
+        new_rows = group[~group["trade_date"].isin(existing_dates)].drop(columns=["year"])
+        if new_rows.empty:
+            continue
+
+        part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
+        with get_connection() as con:
+            con.register("df", new_rows)
+            con.execute("COPY (SELECT * FROM df) TO ? (FORMAT 'parquet')", [str(part_path)])
+        inserted += new_rows.shape[0]
+
+    return inserted
 
 
 def upsert_adj_factor(df: pd.DataFrame) -> int:
@@ -117,13 +153,18 @@ def upsert_adj_factor(df: pd.DataFrame) -> int:
 
 
 def list_daily(ts_code: str) -> list[dict[str, object]]:
+    daily_root = settings.data_dir / "raw" / "daily" / f"ts_code={ts_code}"
+    if not daily_root.exists():
+        return []
+
+    part_glob = str(daily_root / "year=*/part-*.parquet")
     query = (
         "SELECT ts_code, trade_date, open, high, low, close, vol, amount "
-        "FROM daily WHERE ts_code = ? ORDER BY trade_date"
+        "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
     )
     with get_connection() as con:
         try:
-            rows = con.execute(query, [ts_code]).fetchdf()
+            rows = con.execute(query, [part_glob, ts_code]).fetchdf()
         except duckdb.CatalogException:
             return []
     return rows.to_dict(orient="records")

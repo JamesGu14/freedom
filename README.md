@@ -371,6 +371,41 @@ REDIS_URL=redis://localhost:6379/0（可选）
 
 启动前端：`npm run dev`
 
+### 10.3 日线数据拉取（按交易日全市场）
+
+脚本会按日期遍历，每个交易日调用 TuShare 拉取全市场 daily 与 adj_factor，
+并写入 `data/raw/daily/ts_code=.../year=.../part-*.parquet` 分区。
+
+```bash
+# 拉取当天
+python backend/scripts/pull_daily_history.py
+
+# 拉取最近 7 天（可配合 --end-date 指定截止日期）
+python backend/scripts/pull_daily_history.py --last-days 7
+
+# 指定日期区间
+python backend/scripts/pull_daily_history.py --start-date 20240101 --end-date 20240131
+```
+
+### 10.4 Parquet 压缩合并（Compaction）
+
+将同一股票同一年目录下的多个 `part-*.parquet` 合并成单个 `part-0000.parquet`，
+以减少文件数量，查询时仍通过 `read_parquet` 自动读取。
+
+```bash
+# 全量：遍历所有股票所有年份
+python backend/scripts/compact_daily_parquet.py
+
+# 只压缩单只股票
+python backend/scripts/compact_daily_parquet.py --ts-code 000001.SZ
+
+# 只压缩某一年
+python backend/scripts/compact_daily_parquet.py --year 2024
+
+# 单股单年
+python backend/scripts/compact_daily_parquet.py --ts-code 000001.SZ --year 2024
+```
+
 ## 11. 验收标准（MVP）
 
 - 任意交易日：能拉取全市场 daily + daily_basic 并落地 Parquet
