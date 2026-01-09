@@ -12,6 +12,28 @@ const formatDate = (value) => {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
 };
 
+const normalizeDailyRows = (rows) => {
+  const map = new Map();
+  rows.forEach((row) => {
+    if (!row?.trade_date) {
+      return;
+    }
+    map.set(row.trade_date, row);
+  });
+  return Array.from(map.values());
+};
+
+const normalizeAdjRows = (rows) => {
+  const map = new Map();
+  rows.forEach((row) => {
+    if (!row?.trade_date) {
+      return;
+    }
+    map.set(row.trade_date, row);
+  });
+  return Array.from(map.values());
+};
+
 export default function StockKline() {
   const router = useRouter();
   const { ts_code: tsCode } = router.query;
@@ -71,8 +93,8 @@ export default function StockKline() {
         throw new Error(`加载失败: ${candlesRes.status}`);
       }
       const data = await candlesRes.json();
-      setDaily(data.daily || []);
-      setAdjFactor(data.adj_factor || []);
+      setDaily(normalizeDailyRows(data.daily || []));
+      setAdjFactor(normalizeAdjRows(data.adj_factor || []));
       if (basicRes.ok) {
         const info = await basicRes.json();
         setStockInfo(info);

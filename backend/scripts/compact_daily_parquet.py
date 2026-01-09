@@ -47,12 +47,15 @@ def compact_partition(partition_dir: Path) -> tuple[int, int]:
     if len(parts) <= 1:
         return 0, 0
 
-    tmp_path = partition_dir / f"part-compact-{uuid.uuid4().hex}.parquet"
+    tmp_path = partition_dir / f"compact-{uuid.uuid4().hex}.parquet"
     part_glob = str(partition_dir / "part-*.parquet")
     with duckdb.connect() as con:
+        part_glob_sql = part_glob.replace("'", "''")
+        tmp_path_sql = str(tmp_path).replace("'", "''")
         con.execute(
-            "COPY (SELECT * FROM read_parquet(?)) TO ? (FORMAT 'parquet')",
-            [part_glob, str(tmp_path)],
+            f"COPY (SELECT DISTINCT * FROM read_parquet('{part_glob_sql}') "
+            f"ORDER BY trade_date) "
+            f"TO '{tmp_path_sql}' (FORMAT 'parquet')"
         )
 
     removed = 0

@@ -65,25 +65,43 @@ def main() -> None:
         start_date = normalize_date(args.start_date) if args.start_date else end_date
     date_list = build_date_list(start_date, end_date)
 
+    module_file = getattr(sys.modules[upsert_daily.__module__], "__file__", "unknown")
+    print(f"using upsert_daily from {module_file}")
+
     pro = ts.pro_api("e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e")
     for idx, trade_date in enumerate(date_list, start=1):
         try:
             api_start = time.perf_counter()
             daily_df = pull_daily_by_date(pro, trade_date)
+            print(f"[{idx}/{len(date_list)}] {trade_date} daily_df.shape={daily_df.shape}")
             if daily_df.empty:
+                print(
+                    f"[{idx}/{len(date_list)}] {trade_date} daily_df columns="
+                    f"{list(daily_df.columns)}"
+                )
                 print(f"[{idx}/{len(date_list)}] {trade_date} no trading data")
                 continue
             adj_df = pull_adj_by_date(pro, trade_date)
             api_elapsed = time.perf_counter() - api_start
 
-            write_start = time.perf_counter()
+            write_daily_start = time.perf_counter()
             inserted_daily = upsert_daily(daily_df)
+            write_daily_elapsed = time.perf_counter() - write_daily_start
+            if inserted_daily != len(daily_df):
+                print(
+                    f"[{idx}/{len(date_list)}] {trade_date} daily count mismatch "
+                    f"df={len(daily_df)} inserted={inserted_daily}"
+                )
+
+            write_adj_start = time.perf_counter()
             inserted_adj = upsert_adj_factor(adj_df)
-            write_elapsed = time.perf_counter() - write_start
+            write_adj_elapsed = time.perf_counter() - write_adj_start
             print(
                 f"[{idx}/{len(date_list)}] {trade_date} "
                 f"daily={inserted_daily} adj_factor={inserted_adj} "
-                f"api={api_elapsed:.3f}s write={write_elapsed:.3f}s"
+                f"api={api_elapsed:.3f}s "
+                f"write_daily={write_daily_elapsed:.3f}s "
+                f"write_adj={write_adj_elapsed:.3f}s"
             )
         except Exception as exc:
             print(f"[{idx}/{len(date_list)}] {trade_date} failed: {exc}")

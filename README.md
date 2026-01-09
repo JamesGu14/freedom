@@ -390,7 +390,8 @@ python backend/scripts/pull_daily_history.py --start-date 20240101 --end-date 20
 ### 10.4 Parquet 压缩合并（Compaction）
 
 将同一股票同一年目录下的多个 `part-*.parquet` 合并成单个 `part-0000.parquet`，
-以减少文件数量，查询时仍通过 `read_parquet` 自动读取。
+以减少文件数量，查询时仍通过 `read_parquet` 自动读取。日线写入阶段不做去重，
+幂等由 compaction 的 `SELECT DISTINCT` 去重保障。
 
 ```bash
 # 全量：遍历所有股票所有年份

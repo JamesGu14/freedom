@@ -92,44 +92,15 @@ def upsert_daily(df: pd.DataFrame) -> int:
     data["trade_date"] = data["trade_date"].astype(str)
     data["year"] = data["trade_date"].str[:4]
 
-    inserted = 0
     for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
         partition_dir = daily_base / f"ts_code={ts_code}" / f"year={year}"
         partition_dir.mkdir(parents=True, exist_ok=True)
-        part_glob = str(partition_dir / "part-*.parquet")
-
-        incoming_dates = group["trade_date"].unique()
-        existing_dates: set[str] = set()
-        if any(partition_dir.glob("part-*.parquet")):
-            with get_connection() as con:
-                con.register(
-                    "incoming_dates",
-                    pd.DataFrame({"trade_date": incoming_dates}),
-                )
-                try:
-                    rows = con.execute(
-                        """
-                        SELECT DISTINCT p.trade_date
-                        FROM read_parquet(?) AS p
-                        JOIN incoming_dates d ON p.trade_date = d.trade_date
-                        """,
-                        [part_glob],
-                    ).fetchall()
-                    existing_dates = {row[0] for row in rows}
-                except Exception:
-                    existing_dates = set()
-
-        new_rows = group[~group["trade_date"].isin(existing_dates)].drop(columns=["year"])
-        if new_rows.empty:
-            continue
-
+        new_rows = group.drop(columns=["year"])
         part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
         with get_connection() as con:
             con.register("df", new_rows)
             con.execute("COPY (SELECT * FROM df) TO ? (FORMAT 'parquet')", [str(part_path)])
-        inserted += new_rows.shape[0]
-
-    return inserted
+    return df.shape[0]
 
 
 def upsert_adj_factor(df: pd.DataFrame) -> int:
