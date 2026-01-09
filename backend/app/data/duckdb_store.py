@@ -3,7 +3,6 @@ from __future__ import annotations
 import duckdb
 import pandas as pd
 import uuid
-from pathlib import Path
 
 from app.core.config import settings
 
@@ -123,6 +122,56 @@ def upsert_adj_factor(df: pd.DataFrame) -> int:
         return df.shape[0]
 
 
+def upsert_daily_basic(df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+
+    if "ts_code" not in df.columns or "trade_date" not in df.columns:
+        raise ValueError("daily_basic data must include ts_code and trade_date")
+
+    base_dir = settings.data_dir / "raw" / "daily_basic"
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    data = df.copy()
+    data["trade_date"] = data["trade_date"].astype(str)
+    data["year"] = data["trade_date"].str[:4]
+
+    for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
+        partition_dir = base_dir / f"ts_code={ts_code}" / f"year={year}"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+        part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
+        new_rows = group.drop(columns=["year"])
+        with get_connection() as con:
+            con.register("df", new_rows)
+            con.execute("COPY (SELECT * FROM df) TO ? (FORMAT 'parquet')", [str(part_path)])
+    return df.shape[0]
+
+
+def upsert_daily_limit(df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+
+    if "ts_code" not in df.columns or "trade_date" not in df.columns:
+        raise ValueError("daily_limit data must include ts_code and trade_date")
+
+    base_dir = settings.data_dir / "raw" / "daily_limit"
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    data = df.copy()
+    data["trade_date"] = data["trade_date"].astype(str)
+    data["year"] = data["trade_date"].str[:4]
+
+    for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
+        partition_dir = base_dir / f"ts_code={ts_code}" / f"year={year}"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+        part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
+        new_rows = group.drop(columns=["year"])
+        with get_connection() as con:
+            con.register("df", new_rows)
+            con.execute("COPY (SELECT * FROM df) TO ? (FORMAT 'parquet')", [str(part_path)])
+    return df.shape[0]
+
+
 def list_daily(ts_code: str) -> list[dict[str, object]]:
     daily_root = settings.data_dir / "raw" / "daily" / f"ts_code={ts_code}"
     if not daily_root.exists():
@@ -131,6 +180,44 @@ def list_daily(ts_code: str) -> list[dict[str, object]]:
     part_glob = str(daily_root / "year=*/part-*.parquet")
     query = (
         "SELECT ts_code, trade_date, open, high, low, close, vol, amount "
+        "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
+    )
+    with get_connection() as con:
+        try:
+            rows = con.execute(query, [part_glob, ts_code]).fetchdf()
+        except duckdb.CatalogException:
+            return []
+    return rows.to_dict(orient="records")
+
+
+def list_daily_basic(ts_code: str) -> list[dict[str, object]]:
+    daily_basic_root = settings.data_dir / "raw" / "daily_basic" / f"ts_code={ts_code}"
+    if not daily_basic_root.exists():
+        return []
+
+    part_glob = str(daily_basic_root / "year=*/part-*.parquet")
+    query = (
+        "SELECT ts_code, trade_date, close, turnover_rate, turnover_rate_f, "
+        "volume_ratio, pe, pe_ttm, pb, ps, ps_ttm, dv_ratio, dv_ttm, "
+        "total_share, float_share, free_share, total_mv, circ_mv "
+        "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
+    )
+    with get_connection() as con:
+        try:
+            rows = con.execute(query, [part_glob, ts_code]).fetchdf()
+        except duckdb.CatalogException:
+            return []
+    return rows.to_dict(orient="records")
+
+
+def list_stk_limit(ts_code: str) -> list[dict[str, object]]:
+    daily_limit_root = settings.data_dir / "raw" / "daily_limit" / f"ts_code={ts_code}"
+    if not daily_limit_root.exists():
+        return []
+
+    part_glob = str(daily_limit_root / "year=*/part-*.parquet")
+    query = (
+        "SELECT trade_date, ts_code, pre_close, up_limit, down_limit "
         "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
     )
     with get_connection() as con:

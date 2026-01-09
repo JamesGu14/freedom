@@ -225,7 +225,8 @@ K 线（前复权/后复权切换可后续）
 data/
   raw/
     daily/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
-    daily_basic/trade_date=YYYYMMDD/part-*.parquet
+    daily_basic/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
+    daily_limit/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
     adj_factor/trade_date=YYYYMMDD/part-*.parquet
     stock_basic/part-*.parquet
     trade_cal/part-*.parquet
