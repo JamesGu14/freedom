@@ -449,3 +449,16 @@ TuShare 有频率/额度限制：需要做增量拉取、失败重试与缓存�
 ## 14. License
 
 自用项目（internal use）。
+
+
+## 本地启动
+```bash
+# 后端：
+conda activate freedom
+cd backend
+uvicorn app.main:app --reload --host 0.0.0.0 --port 9000 --reload-dir app
+
+# 前端：
+cd frontend
+npm run dev
+```

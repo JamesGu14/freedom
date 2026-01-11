@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     log_dir: Path = PROJECT_ROOT / "logs"
 
     tushare_token: str | None = None
-    data_dir: Path = Path("./data")
-    duckdb_path: Path = Path("./data/quant.duckdb")
+    data_dir: Path = PROJECT_ROOT / "data"
+    duckdb_path: Path = PROJECT_ROOT / "data" / "quant.duckdb"
     redis_url: str | None = None
 
 

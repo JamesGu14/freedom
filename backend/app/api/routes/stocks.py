@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.services.stocks_service import (
     get_adj_factor,
     get_daily,
+    get_indicators,
     get_industries,
     get_stock_basic,
     get_stock_basic_by_ts_code,
@@ -67,5 +68,6 @@ def get_basic(ts_code: str) -> dict[str, object]:
 
 
 @router.get("/stocks/{ts_code}/features")
-def get_features(ts_code: str) -> dict[str, str]:
-    return {"ts_code": ts_code}
+def get_features(ts_code: str) -> dict[str, object]:
+    indicators = get_indicators(ts_code)
+    return {"ts_code": ts_code, "indicators": indicators}

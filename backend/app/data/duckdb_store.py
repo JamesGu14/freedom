@@ -91,14 +91,13 @@ def upsert_daily(df: pd.DataFrame) -> int:
     data["trade_date"] = data["trade_date"].astype(str)
     data["year"] = data["trade_date"].str[:4]
 
+    # Use pandas to_parquet directly for better performance
     for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
         partition_dir = daily_base / f"ts_code={ts_code}" / f"year={year}"
         partition_dir.mkdir(parents=True, exist_ok=True)
         new_rows = group.drop(columns=["year"])
         part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
-        with get_connection() as con:
-            con.register("df", new_rows)
-            con.execute("COPY (SELECT * FROM df) TO ? (FORMAT 'parquet')", [str(part_path)])
+        new_rows.to_parquet(part_path, index=False, engine="pyarrow")
     return df.shape[0]
 
 
@@ -136,14 +135,13 @@ def upsert_daily_basic(df: pd.DataFrame) -> int:
     data["trade_date"] = data["trade_date"].astype(str)
     data["year"] = data["trade_date"].str[:4]
 
+    # Use pandas to_parquet directly for better performance
     for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
         partition_dir = base_dir / f"ts_code={ts_code}" / f"year={year}"
         partition_dir.mkdir(parents=True, exist_ok=True)
         part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
         new_rows = group.drop(columns=["year"])
-        with get_connection() as con:
-            con.register("df", new_rows)
-            con.execute("COPY (SELECT * FROM df) TO ? (FORMAT 'parquet')", [str(part_path)])
+        new_rows.to_parquet(part_path, index=False, engine="pyarrow")
     return df.shape[0]
 
 
@@ -161,15 +159,30 @@ def upsert_daily_limit(df: pd.DataFrame) -> int:
     data["trade_date"] = data["trade_date"].astype(str)
     data["year"] = data["trade_date"].str[:4]
 
+    # Use pandas to_parquet directly for better performance
     for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
         partition_dir = base_dir / f"ts_code={ts_code}" / f"year={year}"
         partition_dir.mkdir(parents=True, exist_ok=True)
         part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
         new_rows = group.drop(columns=["year"])
-        with get_connection() as con:
-            con.register("df", new_rows)
-            con.execute("COPY (SELECT * FROM df) TO ? (FORMAT 'parquet')", [str(part_path)])
+        new_rows.to_parquet(part_path, index=False, engine="pyarrow")
     return df.shape[0]
+
+
+def has_stock_data(ts_code: str) -> bool:
+    """Check if stock has any data in parquet files (daily, daily_basic, or daily_limit)."""
+    daily_root = settings.data_dir / "raw" / "daily" / f"ts_code={ts_code}"
+    if not daily_root.exists():
+        return False
+
+    part_glob = str(daily_root / "year=*/part-*.parquet")
+    query = "SELECT COUNT(*) as cnt FROM read_parquet(?) WHERE ts_code = ?"
+    with get_connection() as con:
+        try:
+            result = con.execute(query, [part_glob, ts_code]).fetchone()
+            return result[0] > 0 if result else False
+        except duckdb.CatalogException:
+            return False
 
 
 def list_daily(ts_code: str) -> list[dict[str, object]]:
@@ -236,6 +249,24 @@ def list_adj_factor(ts_code: str) -> list[dict[str, object]]:
     with get_connection() as con:
         try:
             rows = con.execute(query, [ts_code]).fetchdf()
+        except duckdb.CatalogException:
+            return []
+    return rows.to_dict(orient="records")
+
+
+def list_indicators(ts_code: str) -> list[dict[str, object]]:
+    """Get technical indicators for a stock."""
+    indicators_root = settings.data_dir / "features" / "indicators" / f"ts_code={ts_code}"
+    if not indicators_root.exists():
+        return []
+
+    part_glob = str(indicators_root / "year=*/part-*.parquet")
+    query = (
+        "SELECT * FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
+    )
+    with get_connection() as con:
+        try:
+            rows = con.execute(query, [part_glob, ts_code]).fetchdf()
         except duckdb.CatalogException:
             return []
     return rows.to_dict(orient="records")
