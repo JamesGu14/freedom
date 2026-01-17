@@ -32,6 +32,82 @@
 
 ---
 
+## 2.1 DuckDB 数据库结构（含 Parquet 分区）
+
+DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/索引表存储，并通过 `read_parquet()` 直接查询分区 Parquet 数据。
+
+### 2.1.1 DuckDB 表（实际库内）
+
+**stock_basic**（实际字段）
+
+- 来源：TuShare `stock_basic`
+- 用途：股票基本信息、列表页检索与行业筛选
+- 关键字段（实际表可能包含更多 TuShare 字段）：
+  - `ts_code` (VARCHAR)
+  - `symbol` (VARCHAR)
+  - `name` (VARCHAR)
+  - `area` (VARCHAR)
+  - `industry` (VARCHAR)
+  - `market` (VARCHAR)
+  - `list_date` (VARCHAR, YYYYMMDD)
+
+**adj_factor**（实际字段）
+
+- 来源：TuShare `adj_factor`
+- 用途：复权因子查询
+- 字段：
+  - `ts_code` (VARCHAR)
+  - `trade_date` (VARCHAR, YYYYMMDD)
+  - `adj_factor` (DOUBLE)
+
+### 2.1.2 DuckDB 视图
+
+- 当前库内 **无业务视图**。仅存在 DuckDB/SQLite 的系统视图（如 `duckdb_tables`, `sqlite_master` 等），未在本项目中使用。
+
+### 2.1.3 Parquet 分区数据集（DuckDB 通过 read_parquet 查询）
+
+**daily**（原始日线行情）
+
+- 路径：`data/raw/daily/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（来自 TuShare `daily`）：
+  - `ts_code`, `trade_date` (str, YYYYMMDD)
+  - `open`, `high`, `low`, `close`
+  - `pre_close`, `change`, `pct_chg`
+  - `vol`, `amount`
+
+**daily_basic**（估值/换手/市值）
+
+- 路径：`data/raw/daily_basic/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（来自 TuShare `daily_basic`）：
+  - `ts_code`, `trade_date` (str, YYYYMMDD)
+  - `close`
+  - `turnover_rate`, `turnover_rate_f`, `volume_ratio`
+  - `pe`, `pe_ttm`, `pb`, `ps`, `ps_ttm`
+  - `dv_ratio`, `dv_ttm`
+  - `total_share`, `float_share`, `free_share`
+  - `total_mv`, `circ_mv`
+
+**daily_limit**（涨跌停）
+
+- 路径：`data/raw/daily_limit/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（来自 TuShare `stk_limit`）：
+  - `trade_date` (str, YYYYMMDD)
+  - `ts_code`
+  - `pre_close`, `up_limit`, `down_limit`
+
+**indicators**（技术指标特征）
+
+- 路径：`data/features/indicators/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（由 `scripts/one_time/calculate_indicators.py` 生成）：
+  - `ts_code`, `trade_date` (str, YYYYMMDD)
+  - `ma5`, `ma10`, `ma20`, `ma30`, `ma60`, `ma120`, `ma200`, `ma250`, `ma500`
+  - `macd`, `macd_signal`, `macd_hist`
+  - `rsi`
+  - `kdj_k`, `kdj_d`, `kdj_j`
+  - `boll_upper`, `boll_middle`, `boll_lower`
+
+---
+
 ## 3. 总体架构
 
 ```mermaid

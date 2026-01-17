@@ -208,10 +208,10 @@ export default function StockKline() {
       chartInstanceRef.current.setOption({
         backgroundColor: "#000000",
         grid: [
-          { left: 40, right: 20, top: 30, height: "35%" },
-          { left: 40, right: 20, top: "38%", height: "10%" },
-          { left: 40, right: 20, top: "50%", height: "23%" },
-          { left: 40, right: 20, top: "75%", height: "23%" },
+          { left: 40, right: 20, top: 30, height: 280 },
+          { left: 40, right: 20, top: 330, height: 90 },
+          { left: 40, right: 20, top: 450, height: 180 },
+          { left: 40, right: 20, top: 660, height: 180 },
         ],
         tooltip: {
           trigger: "axis",
@@ -219,19 +219,23 @@ export default function StockKline() {
             if (!params || params.length === 0) {
               return "";
             }
+            const formatNumber = (val) => {
+              if (val == null || val === "") return "-";
+              const num = typeof val === "number" ? val : parseFloat(val);
+              return isNaN(num) ? "-" : num.toFixed(4);
+            };
             const index = params[0].dataIndex;
             const date = dates[index];
             const lines = [`${date}`];
 
-            // K线数据
-            const candle = params.find((item) => item.seriesType === "candlestick");
-            if (candle) {
-              const values = candle.data || [];
+            // K线数据 - 从原始数据读取，确保准确性
+            if (index >= 0 && index < sortedDaily.length) {
+              const item = sortedDaily[index];
               lines.push(
-                `开盘: ${values[0]}`,
-                `收盘: ${values[1]}`,
-                `最低: ${values[2]}`,
-                `最高: ${values[3]}`
+                `开盘: ${formatNumber(item.open)}`,
+                `收盘: ${formatNumber(item.close)}`,
+                `最低: ${formatNumber(item.low)}`,
+                `最高: ${formatNumber(item.high)}`
               );
             }
 
@@ -242,16 +246,16 @@ export default function StockKline() {
             const ma30 = params.find((item) => item.seriesName === "MA30");
             if (ma5 || ma10 || ma20 || ma30) {
               lines.push("");
-              if (ma5) lines.push(`MA5: ${ma5.value ?? "-"}`);
-              if (ma10) lines.push(`MA10: ${ma10.value ?? "-"}`);
-              if (ma20) lines.push(`MA20: ${ma20.value ?? "-"}`);
-              if (ma30) lines.push(`MA30: ${ma30.value ?? "-"}`);
+              if (ma5) lines.push(`MA5: ${formatNumber(ma5.value)}`);
+              if (ma10) lines.push(`MA10: ${formatNumber(ma10.value)}`);
+              if (ma20) lines.push(`MA20: ${formatNumber(ma20.value)}`);
+              if (ma30) lines.push(`MA30: ${formatNumber(ma30.value)}`);
             }
 
             // 成交量
             const volume = params.find((item) => item.seriesName === "成交量");
             if (volume) {
-              lines.push(`成交量: ${volume.value ?? "-"}`);
+              lines.push(`成交量: ${formatNumber(volume.value)}`);
             }
 
             // KDJ数据
@@ -260,9 +264,9 @@ export default function StockKline() {
             const kdjJ = params.find((item) => item.seriesName === "KDJ-J");
             if (kdjK || kdjD || kdjJ) {
               lines.push("");
-              if (kdjK) lines.push(`KDJ-K: ${kdjK.value?.toFixed(2) ?? "-"}`);
-              if (kdjD) lines.push(`KDJ-D: ${kdjD.value?.toFixed(2) ?? "-"}`);
-              if (kdjJ) lines.push(`KDJ-J: ${kdjJ.value?.toFixed(2) ?? "-"}`);
+              if (kdjK) lines.push(`KDJ-K: ${formatNumber(kdjK.value)}`);
+              if (kdjD) lines.push(`KDJ-D: ${formatNumber(kdjD.value)}`);
+              if (kdjJ) lines.push(`KDJ-J: ${formatNumber(kdjJ.value)}`);
             }
 
             // MACD数据
@@ -271,9 +275,9 @@ export default function StockKline() {
             const macdHist = params.find((item) => item.seriesName === "MACD-Hist");
             if (macd || macdSignal || macdHist) {
               lines.push("");
-              if (macd) lines.push(`MACD: ${macd.value?.toFixed(4) ?? "-"}`);
-              if (macdSignal) lines.push(`MACD-Signal: ${macdSignal.value?.toFixed(4) ?? "-"}`);
-              if (macdHist) lines.push(`MACD-Hist: ${macdHist.value?.toFixed(4) ?? "-"}`);
+              if (macd) lines.push(`MACD: ${formatNumber(macd.value)}`);
+              if (macdSignal) lines.push(`MACD-Signal: ${formatNumber(macdSignal.value)}`);
+              if (macdHist) lines.push(`MACD-Hist: ${formatNumber(macdHist.value)}`);
             }
 
             return lines.join("<br/>");
@@ -347,15 +351,15 @@ export default function StockKline() {
             xAxisIndex: [0, 1, 2, 3],
             start: startPercent,
             end: 100,
-            top: "97%",
-            height: 18,
+            bottom: 10,
+            height: 25,
           },
         ],
         graphic: [
           {
             type: "text",
             left: 50,
-            top: "52%",
+            top: 452,
             style: {
               text: "KDJ",
               fontSize: 14,
@@ -366,7 +370,7 @@ export default function StockKline() {
           {
             type: "text",
             left: 50,
-            top: "77%",
+            top: 662,
             style: {
               text: "MACD",
               fontSize: 14,

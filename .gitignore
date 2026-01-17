@@ -2,6 +2,7 @@
 *.parquet
 node_modules/
 .next/
+*.zip
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

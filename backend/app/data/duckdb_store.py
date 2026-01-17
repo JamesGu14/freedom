@@ -105,8 +105,14 @@ def upsert_adj_factor(df: pd.DataFrame) -> int:
     if df.empty:
         return 0
 
+    if "trade_date" not in df.columns:
+        raise ValueError("adj_factor data must include trade_date")
+
+    data = df.copy()
+    data["trade_date"] = data["trade_date"].astype(str)
+
     with get_connection() as con:
-        con.register("df", df)
+        con.register("df", data)
         con.execute("CREATE TABLE IF NOT EXISTS adj_factor AS SELECT * FROM df WHERE 1=0")
         con.execute(
             """
