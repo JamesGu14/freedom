@@ -12,6 +12,7 @@ dependencies = [
   "tushare>=1.4.0",
   "pydantic-settings>=2.2.1",
   "apscheduler>=3.10.4",
+  "pymongo>=4.7.0",
 ]
 
 [build-system]

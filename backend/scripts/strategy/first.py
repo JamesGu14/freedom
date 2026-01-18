@@ -7,7 +7,10 @@ from pathlib import Path
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
+import pandas as pd
+
 from app.data.duckdb_store import get_connection, list_indicators  # noqa: E402
+from scripts.strategy.base_strategy import BaseStrategy  # noqa: E402
 
 
 def load_all_stocks() -> list[str]:
@@ -18,6 +21,43 @@ def load_all_stocks() -> list[str]:
         except Exception as exc:
             raise SystemExit(f"Failed to load stock_basic: {exc}") from exc
     return [row[0] for row in rows]
+
+
+class MaCrossSignalModel(BaseStrategy):
+    def __init__(self, stock_code: str):
+        super().__init__(stock_code, include_daily_basic=False)
+        if self.df is None:
+            return
+        df = self.df.copy()
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.set_index("date")
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+        self.df = df.sort_index()
+
+    def predict_date(self, select_date) -> str:
+        if self.df is None or self.df.empty:
+            return "HOLD"
+        date = pd.Timestamp(select_date)
+        if date not in self.df.index:
+            raise KeyError(f"{self.stock_code}: date not found {date}")
+        idx = self.df.index.get_loc(date)
+        if isinstance(idx, slice) or idx == 0:
+            return "HOLD"
+        yesterday = self.df.iloc[idx - 1]
+        today = self.df.iloc[idx]
+
+        ma5_yesterday = yesterday.get("ma5")
+        ma20_yesterday = yesterday.get("ma20")
+        ma5_today = today.get("ma5")
+        ma20_today = today.get("ma20")
+
+        if any(x is None for x in [ma5_yesterday, ma20_yesterday, ma5_today, ma20_today]):
+            return "HOLD"
+        if ma5_yesterday < ma20_yesterday and ma5_today > ma20_today:
+            return "BUY"
+        return "HOLD"
 
 
 def check_ma5_cross_above_ma20(ts_code: str) -> bool:

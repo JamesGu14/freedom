@@ -15,10 +15,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: Path = PROJECT_ROOT / "logs"
 
-    tushare_token: str | None = None
+    tushare_token: str | None = "e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e"
     data_dir: Path = PROJECT_ROOT / "data"
     duckdb_path: Path = PROJECT_ROOT / "data" / "quant.duckdb"
     redis_url: str | None = None
+    mongodb_url: str = "mongodb://james:2x%23fdksma%21@localhost:27017/?authSource=admin"
+    mongodb_db: str = "freedom"
 
 
 settings = Settings()
