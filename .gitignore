@@ -4,6 +4,7 @@ node_modules/
 .next/
 *.zip
 data/
+nohup.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

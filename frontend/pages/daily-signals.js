@@ -4,15 +4,55 @@ import Link from "next/link";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
 
+const normalizeDateValue = (value) => {
+  if (!value) return "";
+  const cleaned = String(value).replace(/-/g, "");
+  return cleaned.length === 8 ? cleaned : "";
+};
+
 const formatDate = (value) => {
-  if (!value || value.length !== 8) return value || "-";
-  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  const normalized = normalizeDateValue(value);
+  if (!normalized) return value || "-";
+  return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`;
+};
+
+const parseYmd = (value) => {
+  const normalized = normalizeDateValue(value);
+  if (!normalized) return null;
+  const year = Number(normalized.slice(0, 4));
+  const month = Number(normalized.slice(4, 6)) - 1;
+  const day = Number(normalized.slice(6, 8));
+  return new Date(year, month, day);
+};
+
+const buildCalendar = (year, monthIndex) => {
+  const firstDay = new Date(year, monthIndex, 1);
+  const startWeekday = firstDay.getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i += 1) {
+    cells.push(null);
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push(new Date(year, monthIndex, day));
+  }
+  while (cells.length % 7 !== 0) {
+    cells.push(null);
+  }
+  return cells;
 };
 
 export default function DailySignals() {
   const [dates, setDates] = useState([]);
+  const [dateSet, setDateSet] = useState(new Set());
   const [selectedDate, setSelectedDate] = useState("");
   const [stockCode, setStockCode] = useState("");
+  const [strategy, setStrategy] = useState("");
+  const [strategies, setStrategies] = useState([]);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,22 +65,45 @@ export default function DailySignals() {
         return;
       }
       const data = await res.json();
-      const items = [...(data.items || [])].sort((a, b) => String(b).localeCompare(String(a)));
+      const rawItems = data.items || [];
+      const normalizedItems = rawItems
+        .map((item) => normalizeDateValue(item))
+        .filter((item) => item);
+      const items = [...new Set(normalizedItems)].sort((a, b) => String(b).localeCompare(String(a)));
       setDates(items);
-      if (items.length > 0) {
+      setDateSet(new Set(items));
+      if (items.length > 0 && !selectedDate) {
         setSelectedDate(items[0]);
-        loadSignals(items[0], stockCode);
+        loadSignals(items[0], stockCode, strategy);
+        const latest = parseYmd(items[0]);
+        if (latest) {
+          setCalendarMonth(new Date(latest.getFullYear(), latest.getMonth(), 1));
+        }
       }
     } catch (err) {
       // ignore date load failures
     }
   };
 
-  const loadSignals = async (overrideDate, overrideStock) => {
+  const loadStrategies = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/daily-signals/strategies`);
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      setStrategies(data.items || []);
+    } catch (err) {
+      // ignore strategy load failures
+    }
+  };
+
+  const loadSignals = async (overrideDate, overrideStock, overrideStrategy) => {
     setError("");
     const dateValue = overrideDate ?? selectedDate;
     const stockValue = overrideStock ?? stockCode;
-    if (!dateValue && !stockValue.trim()) {
+    const strategyValue = overrideStrategy ?? strategy;
+    if (!dateValue && !stockValue.trim() && !strategyValue.trim()) {
       setItems([]);
       setHasQuery(false);
       return;
@@ -51,6 +114,7 @@ export default function DailySignals() {
       const params = new URLSearchParams();
       if (dateValue) params.set("trading_date", dateValue);
       if (stockValue.trim()) params.set("stock_code", stockValue.trim());
+      if (strategyValue.trim()) params.set("strategy", strategyValue.trim());
       const res = await fetch(`${API_BASE}/daily-signals?${params.toString()}`);
       if (!res.ok) {
         throw new Error(`加载失败: ${res.status}`);
@@ -67,11 +131,42 @@ export default function DailySignals() {
 
   useEffect(() => {
     loadDates();
+    loadStrategies();
   }, []);
 
   const handleSubmit = (event) => {
     event.preventDefault();
     loadSignals();
+  };
+
+  const changeMonth = (delta) => {
+    if (!calendarMonth) return;
+    const newMonth = new Date(calendarMonth);
+    newMonth.setMonth(newMonth.getMonth() + delta);
+    setCalendarMonth(newMonth);
+  };
+
+  const changeYear = (delta) => {
+    if (!calendarMonth) return;
+    const newMonth = new Date(calendarMonth);
+    newMonth.setFullYear(newMonth.getFullYear() + delta);
+    setCalendarMonth(newMonth);
+  };
+
+  const handleYearChange = (event) => {
+    const year = parseInt(event.target.value);
+    if (!calendarMonth) return;
+    const newMonth = new Date(calendarMonth);
+    newMonth.setFullYear(year);
+    setCalendarMonth(newMonth);
+  };
+
+  const handleMonthChange = (event) => {
+    const month = parseInt(event.target.value);
+    if (!calendarMonth) return;
+    const newMonth = new Date(calendarMonth);
+    newMonth.setMonth(month);
+    setCalendarMonth(newMonth);
   };
 
   return (
@@ -81,6 +176,106 @@ export default function DailySignals() {
           <p className="eyebrow">Quant Platform</p>
           <h1>每日信号</h1>
           <p className="subtitle">查看策略产生的 BUY 信号记录</p>
+        </div>
+        <div className="calendar-panel">
+          <div className="calendar-header">
+            <span>信号日历</span>
+            <div className="calendar-controls">
+              <button
+                type="button"
+                className="calendar-nav-btn"
+                onClick={() => changeYear(-1)}
+                title="上一年"
+              >
+                ««
+              </button>
+              <button
+                type="button"
+                className="calendar-nav-btn"
+                onClick={() => changeMonth(-1)}
+                title="上一个月"
+              >
+                ‹
+              </button>
+              <select
+                className="calendar-year-select"
+                value={calendarMonth ? calendarMonth.getFullYear() : new Date().getFullYear()}
+                onChange={handleYearChange}
+              >
+                {Array.from({ length: 10 }, (_, i) => {
+                  const year = new Date().getFullYear() - 5 + i;
+                  return (
+                    <option key={year} value={year}>
+                      {year}年
+                    </option>
+                  );
+                })}
+              </select>
+              <select
+                className="calendar-month-select"
+                value={calendarMonth ? calendarMonth.getMonth() : new Date().getMonth()}
+                onChange={handleMonthChange}
+              >
+                {Array.from({ length: 12 }, (_, i) => (
+                  <option key={i} value={i}>
+                    {i + 1}月
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="calendar-nav-btn"
+                onClick={() => changeMonth(1)}
+                title="下一个月"
+              >
+                ›
+              </button>
+              <button
+                type="button"
+                className="calendar-nav-btn"
+                onClick={() => changeYear(1)}
+                title="下一年"
+              >
+                »»
+              </button>
+            </div>
+          </div>
+          <div className="calendar-grid">
+            {["日", "一", "二", "三", "四", "五", "六"].map((label) => (
+              <div key={label} className="calendar-weekday">
+                {label}
+              </div>
+            ))}
+            {(calendarMonth
+              ? buildCalendar(calendarMonth.getFullYear(), calendarMonth.getMonth())
+              : []
+            ).map((day, idx) => {
+              if (!day) {
+                return <div key={`empty-${idx}`} className="calendar-cell calendar-empty"></div>;
+              }
+              const key = `${day.getFullYear()}${String(day.getMonth() + 1).padStart(2, "0")}${String(
+                day.getDate()
+              ).padStart(2, "0")}`;
+              const hasSignal = dateSet.has(key);
+              const isSelected = selectedDate === key;
+              return (
+                <div
+                  key={key}
+                  className={`calendar-cell${hasSignal ? " active" : ""}${isSelected ? " selected" : ""}`}
+                  title={formatDate(key)}
+                  onClick={() => {
+                    if (hasSignal) {
+                      setSelectedDate(key);
+                      loadSignals(key, stockCode, strategy);
+                    }
+                  }}
+                  style={{ cursor: hasSignal ? "pointer" : "default" }}
+                >
+                  {day.getDate()}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </header>
 
@@ -110,6 +305,21 @@ export default function DailySignals() {
             onChange={(event) => setStockCode(event.target.value)}
           />
         </div>
+        <div className="field">
+          <label htmlFor="strategy">策略名</label>
+          <select
+            id="strategy"
+            value={strategy}
+            onChange={(event) => setStrategy(event.target.value)}
+          >
+            <option value="">全部策略</option>
+            {strategies.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </div>
         <button className="primary" type="submit" disabled={loading}>
           {loading ? "查询中..." : "查询"}
         </button>
@@ -129,6 +339,7 @@ export default function DailySignals() {
               <tr>
                 <th>股票代码</th>
                 <th>交易日期</th>
+                <th>策略名</th>
                 <th>信号</th>
                 <th>操作</th>
               </tr>
@@ -136,7 +347,7 @@ export default function DailySignals() {
             <tbody className={loading ? "loading" : ""}>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="empty">
+                  <td colSpan="5" className="empty">
                     <div className="empty-state">
                       <span className="empty-icon">📌</span>
                       <p>
@@ -152,6 +363,7 @@ export default function DailySignals() {
                   <tr key={`${item.stock_code}-${item.strategy}-${idx}`}>
                     <td className="code-cell">{item.stock_code}</td>
                     <td>{formatDate(item.trading_date)}</td>
+                    <td>{item.strategy || "-"}</td>
                     <td>
                       <span className="badge">{item.signal || "BUY"}</span>
                     </td>
