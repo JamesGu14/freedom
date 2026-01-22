@@ -9,8 +9,10 @@ services:
       DATA_DIR: /data
       DUCKDB_PATH: /data/quant.duckdb
       REDIS_URL: redis://redis:6379/0
+      LOG_DIR: /app/logs
     volumes:
       - ./data:/data
+      - ./logs:/app/logs
     depends_on:
       - redis
 

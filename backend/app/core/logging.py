@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from app.core.config import settings
@@ -7,7 +8,8 @@ from app.core.config import settings
 def configure_logging(level: str) -> None:
     log_dir = Path(settings.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "app.log"
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_file = log_dir / f"{timestamp}.log"
 
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -19,15 +21,14 @@ def configure_logging(level: str) -> None:
 
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
+    root_logger.handlers = []
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 
-    handlers = {type(handler) for handler in root_logger.handlers}
-    if logging.FileHandler not in handlers:
-        root_logger.addHandler(file_handler)
-    if logging.StreamHandler not in handlers:
-        root_logger.addHandler(console_handler)
+    root_logger.info("Logging initialized")
 
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logger = logging.getLogger(name)
         logger.setLevel(level)
-        if logging.FileHandler not in {type(handler) for handler in logger.handlers}:
-            logger.addHandler(file_handler)
+        logger.handlers = []
+        logger.addHandler(file_handler)

@@ -4,6 +4,7 @@ from app.data.duckdb_store import (
     get_stock_basic_by_code,
     list_adj_factor,
     list_daily,
+    list_features_daily,
     list_industries,
     list_stock_basic,
     replace_stock_basic,
@@ -44,6 +45,10 @@ def get_daily(ts_code: str) -> list[dict[str, object]]:
 
 def get_adj_factor(ts_code: str) -> list[dict[str, object]]:
     return list_adj_factor(ts_code)
+
+
+def get_features_daily(ts_code: str) -> list[dict[str, object]]:
+    return list_features_daily(ts_code)
 
 
 def get_stock_basic_by_ts_code(ts_code: str) -> dict[str, object] | None:

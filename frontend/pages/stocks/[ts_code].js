@@ -21,6 +21,7 @@ export default function StockKline() {
   const [daily, setDaily] = useState([]);
   const [adjFactor, setAdjFactor] = useState([]);
   const [stockInfo, setStockInfo] = useState(null);
+  const [features, setFeatures] = useState([]);
   const [adjPage, setAdjPage] = useState(1);
   const [adjPageSize] = useState(10);
   const [loading, setLoading] = useState(false);
@@ -50,6 +51,14 @@ export default function StockKline() {
     }));
   }, [sortedDaily, adjMap]);
 
+  const featureMap = useMemo(() => {
+    const map = new Map();
+    features.forEach((item) => {
+      map.set(item.trade_date, item);
+    });
+    return map;
+  }, [features]);
+
   const adjTotalPages = Math.max(Math.ceil(displayAdj.length / adjPageSize), 1);
   const adjSlice = useMemo(() => {
     const start = (adjPage - 1) * adjPageSize;
@@ -63,9 +72,10 @@ export default function StockKline() {
     setLoading(true);
     setError("");
     try {
-      const [candlesRes, basicRes] = await Promise.all([
+      const [candlesRes, basicRes, featuresRes] = await Promise.all([
         fetch(`${API_BASE}/stocks/${tsCode}/candles`),
         fetch(`${API_BASE}/stocks/${tsCode}/basic`),
+        fetch(`${API_BASE}/stocks/${tsCode}/features`),
       ]);
       if (!candlesRes.ok) {
         throw new Error(`加载失败: ${candlesRes.status}`);
@@ -76,6 +86,10 @@ export default function StockKline() {
       if (basicRes.ok) {
         const info = await basicRes.json();
         setStockInfo(info);
+      }
+      if (featuresRes.ok) {
+        const featureData = await featuresRes.json();
+        setFeatures(featureData.items || []);
       }
     } catch (err) {
       setError(err.message || "加载失败");
@@ -109,12 +123,12 @@ export default function StockKline() {
 
       const dates = sortedDaily.map((item) => formatDate(item.trade_date));
       const candles = sortedDaily.map((item) => [
-        item.open,
-        item.close,
-        item.low,
-        item.high,
+        Number(item.open),
+        Number(item.close),
+        Number(item.low),
+        Number(item.high),
       ]);
-      const volumes = sortedDaily.map((item) => item.vol || 0);
+      const volumes = sortedDaily.map((item) => Number(item.vol) || 0);
       const volumeBars = sortedDaily.map((item) => ({
         value: item.vol || 0,
         itemStyle: {
@@ -125,11 +139,49 @@ export default function StockKline() {
       const startIndex = Math.max(totalCount - 120, 0);
       const startPercent = totalCount > 1 ? (startIndex / (totalCount - 1)) * 100 : 0;
 
+      const maSeries = (key) =>
+        sortedDaily.map((item) => featureMap.get(item.trade_date)?.[key] ?? null);
+
+      const macdDif = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.macd_dif ?? null
+      );
+      const macdDea = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.macd_dea ?? null
+      );
+      const macdHist = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.macd_hist ?? null
+      );
+      const kdjK = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.kdj_k ?? null
+      );
+      const kdjD = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.kdj_d ?? null
+      );
+      const kdjJ = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.kdj_j ?? null
+      );
+      const rsi14 = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.rsi_14 ?? null
+      );
+      const bollMid = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.boll_mid ?? null
+      );
+      const bollUpper = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.boll_upper ?? null
+      );
+      const bollLower = sortedDaily.map(
+        (item) => featureMap.get(item.trade_date)?.boll_lower ?? null
+      );
+
       chartInstanceRef.current.setOption({
         backgroundColor: "transparent",
         grid: [
-          { left: 40, right: 20, top: 20, height: "60%" },
-          { left: 40, right: 20, top: "70%", height: "20%" },
+          { left: 40, right: 20, top: 20, height: "42%" },
+          { left: 40, right: 20, top: "50%", height: "10%" },
+          { left: 40, right: 20, top: "62%", height: "10%" },
+          { left: 40, right: 20, top: "74%", height: "10%" },
+          { left: 40, right: 20, top: "86%", height: "10%" },
+          { left: 40, right: 20, top: "98%", height: "10%" },
         ],
         tooltip: {
           trigger: "axis",
@@ -154,7 +206,7 @@ export default function StockKline() {
             ].join("<br/>");
           },
         },
-        axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
+        axisPointer: { link: [{ xAxisIndex: [0, 1, 2, 3, 4, 5] }] },
         xAxis: [
           {
             type: "category",
@@ -171,6 +223,38 @@ export default function StockKline() {
             axisLine: { lineStyle: { color: "#c6c6c6" } },
             axisLabel: { color: "#6c6c6c" },
           },
+          {
+            type: "category",
+            data: dates,
+            gridIndex: 2,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: "#c6c6c6" } },
+            axisLabel: { show: false },
+          },
+          {
+            type: "category",
+            data: dates,
+            gridIndex: 3,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: "#c6c6c6" } },
+            axisLabel: { show: false },
+          },
+          {
+            type: "category",
+            data: dates,
+            gridIndex: 4,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: "#c6c6c6" } },
+            axisLabel: { show: false },
+          },
+          {
+            type: "category",
+            data: dates,
+            gridIndex: 5,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: "#c6c6c6" } },
+            axisLabel: { show: false },
+          },
         ],
         yAxis: [
           {
@@ -183,20 +267,40 @@ export default function StockKline() {
             axisLabel: { color: "#6c6c6c" },
             splitLine: { show: false },
           },
+          {
+            gridIndex: 2,
+            axisLabel: { color: "#6c6c6c" },
+            splitLine: { show: false },
+          },
+          {
+            gridIndex: 3,
+            axisLabel: { color: "#6c6c6c" },
+            splitLine: { show: false },
+          },
+          {
+            gridIndex: 4,
+            axisLabel: { color: "#6c6c6c" },
+            splitLine: { show: false },
+          },
+          {
+            gridIndex: 5,
+            axisLabel: { color: "#6c6c6c" },
+            splitLine: { show: false },
+          },
         ],
         dataZoom: [
           {
             type: "inside",
-            xAxisIndex: [0, 1],
+            xAxisIndex: [0, 1, 2, 3, 4, 5],
             start: startPercent,
             end: 100,
           },
           {
             type: "slider",
-            xAxisIndex: [0, 1],
+            xAxisIndex: [0, 1, 2, 3, 4, 5],
             start: startPercent,
             end: 100,
-            top: "92%",
+            top: "114%",
             height: 18,
           },
         ],
@@ -204,7 +308,11 @@ export default function StockKline() {
           {
             name: "K线",
             type: "candlestick",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
             data: candles,
+            barWidth: "60%",
+            z: 3,
             itemStyle: {
               color: "#ef4444",
               color0: "#22c55e",
@@ -213,11 +321,137 @@ export default function StockKline() {
             },
           },
           {
+            name: "MA5",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: maSeries("ma_5"),
+            showSymbol: false,
+            lineStyle: { color: "#ffffff", width: 1.5 },
+          },
+          {
+            name: "MA10",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: maSeries("ma_10"),
+            showSymbol: false,
+            lineStyle: { color: "#a855f7", width: 1.5 },
+          },
+          {
+            name: "MA20",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: maSeries("ma_20"),
+            showSymbol: false,
+            lineStyle: { color: "#facc15", width: 1.5 },
+          },
+          {
+            name: "MA30",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: maSeries("ma_30"),
+            showSymbol: false,
+            lineStyle: { color: "#3b82f6", width: 1.5 },
+          },
+          {
             name: "成交量",
             type: "bar",
             xAxisIndex: 1,
             yAxisIndex: 1,
             data: volumeBars,
+            barWidth: "60%",
+          },
+          {
+            name: "MACD",
+            type: "bar",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: macdHist,
+            itemStyle: { color: "#94a3b8" },
+          },
+          {
+            name: "DIF",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: macdDif,
+            showSymbol: false,
+            lineStyle: { color: "#f97316", width: 1.2 },
+          },
+          {
+            name: "DEA",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: macdDea,
+            showSymbol: false,
+            lineStyle: { color: "#0ea5e9", width: 1.2 },
+          },
+          {
+            name: "KDJ-K",
+            type: "line",
+            xAxisIndex: 3,
+            yAxisIndex: 3,
+            data: kdjK,
+            showSymbol: false,
+            lineStyle: { color: "#f97316", width: 1.2 },
+          },
+          {
+            name: "KDJ-D",
+            type: "line",
+            xAxisIndex: 3,
+            yAxisIndex: 3,
+            data: kdjD,
+            showSymbol: false,
+            lineStyle: { color: "#0ea5e9", width: 1.2 },
+          },
+          {
+            name: "KDJ-J",
+            type: "line",
+            xAxisIndex: 3,
+            yAxisIndex: 3,
+            data: kdjJ,
+            showSymbol: false,
+            lineStyle: { color: "#a855f7", width: 1.2 },
+          },
+          {
+            name: "RSI",
+            type: "line",
+            xAxisIndex: 4,
+            yAxisIndex: 4,
+            data: rsi14,
+            showSymbol: false,
+            lineStyle: { color: "#22c55e", width: 1.2 },
+          },
+          {
+            name: "BOLL-MID",
+            type: "line",
+            xAxisIndex: 5,
+            yAxisIndex: 5,
+            data: bollMid,
+            showSymbol: false,
+            lineStyle: { color: "#eab308", width: 1.2 },
+          },
+          {
+            name: "BOLL-UPPER",
+            type: "line",
+            xAxisIndex: 5,
+            yAxisIndex: 5,
+            data: bollUpper,
+            showSymbol: false,
+            lineStyle: { color: "#ef4444", width: 1.2 },
+          },
+          {
+            name: "BOLL-LOWER",
+            type: "line",
+            xAxisIndex: 5,
+            yAxisIndex: 5,
+            data: bollLower,
+            showSymbol: false,
+            lineStyle: { color: "#3b82f6", width: 1.2 },
           },
         ],
       });
@@ -228,7 +462,7 @@ export default function StockKline() {
     return () => {
       mounted = false;
     };
-  }, [sortedDaily, displayAdj, adjMap]);
+  }, [sortedDaily, displayAdj, adjMap, featureMap]);
 
   useEffect(() => {
     return () => {
