@@ -17,6 +17,9 @@ export default function App({ Component, pageProps }) {
             <Link href="/daily-signals" className="nav-link">
               Daily Signals
             </Link>
+            <Link href="/watchlist" className="nav-link">
+              自选
+            </Link>
           </div>
         </div>
       </nav>

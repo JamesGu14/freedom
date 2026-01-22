@@ -1,21 +1,57 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from app.data.duckdb_store import (
-    get_stock_basic_by_code,
     list_adj_factor,
     list_daily,
+    list_daily_changes_for_date,
+    get_next_trade_date,
     list_indicators,
+    list_latest_daily_changes,
+    load_stock_basic_df,
+    replace_stock_basic,
+)
+from app.data.mongo_stock import (
+    get_stock_basic_by_code,
     list_industries,
     list_stock_basic,
-    replace_stock_basic,
+    upsert_stock_basic,
 )
 from app.data.tushare_client import fetch_stock_basic
 
 
-def sync_stock_basic() -> dict[str, int]:
-    df = fetch_stock_basic()
-    count = replace_stock_basic(df)
-    return {"rows": count}
+def _normalize_df(df: pd.DataFrame) -> list[dict[str, object]]:
+    if df.empty:
+        return []
+    normalized = df.where(pd.notna(df), None)
+    return normalized.to_dict(orient="records")
+
+
+def sync_stock_basic(source: str | None = None) -> dict[str, int | str]:
+    source_value = (source or "tushare").lower()
+    df: pd.DataFrame | None = None
+
+    if source_value == "duckdb":
+        df = load_stock_basic_df()
+        if df.empty:
+            raise ValueError("DuckDB stock_basic is empty or missing")
+    else:
+        try:
+            df = fetch_stock_basic()
+            replace_stock_basic(df)
+            source_value = "tushare"
+        except ValueError:
+            if source is not None:
+                raise
+            df = load_stock_basic_df()
+            if df.empty:
+                raise ValueError("DuckDB stock_basic is empty or missing")
+            source_value = "duckdb"
+
+    records = _normalize_df(df)
+    mongo_count = upsert_stock_basic(records)
+    return {"rows": mongo_count, "source": source_value}
 
 
 def get_stock_basic(
@@ -53,3 +89,15 @@ def get_stock_basic_by_ts_code(ts_code: str) -> dict[str, object] | None:
 
 def get_indicators(ts_code: str) -> list[dict[str, object]]:
     return list_indicators(ts_code)
+
+
+def get_latest_daily_changes(ts_codes: list[str]) -> dict[str, dict[str, object]]:
+    return list_latest_daily_changes(ts_codes)
+
+
+def get_daily_changes_for_date(ts_codes: list[str], trade_date: str) -> dict[str, dict[str, object]]:
+    return list_daily_changes_for_date(ts_codes, trade_date)
+
+
+def get_next_trade_date_for_codes(ts_codes: list[str], trade_date: str) -> str | None:
+    return get_next_trade_date(ts_codes, trade_date)

@@ -26,7 +26,7 @@ def replace_stock_basic(df: pd.DataFrame) -> int:
     if df.empty:
         return 0
 
-    with get_connection(read_only=True) as con:
+    with get_connection(read_only=False) as con:
         con.register("df", df)
         con.execute("CREATE OR REPLACE TABLE stock_basic AS SELECT * FROM df")
         return df.shape[0]
@@ -71,6 +71,15 @@ def list_stock_basic(
         except duckdb.CatalogException:
             return [], 0
     return rows.to_dict(orient="records"), int(total)
+
+
+def load_stock_basic_df() -> pd.DataFrame:
+    query = "SELECT ts_code, symbol, name, area, industry, market, list_date FROM stock_basic"
+    with get_connection(read_only=True) as con:
+        try:
+            return con.execute(query).fetchdf()
+        except duckdb.CatalogException:
+            return pd.DataFrame()
 
 
 def list_industries() -> list[str]:
@@ -121,7 +130,7 @@ def upsert_adj_factor(df: pd.DataFrame) -> int:
     data = df.copy()
     data["trade_date"] = data["trade_date"].astype(str)
 
-    with get_connection(read_only=True) as con:
+    with get_connection(read_only=False) as con:
         con.register("df", data)
         con.execute("CREATE TABLE IF NOT EXISTS adj_factor AS SELECT * FROM df WHERE 1=0")
         con.execute(
@@ -286,6 +295,131 @@ def list_indicators(ts_code: str) -> list[dict[str, object]]:
         except duckdb.CatalogException:
             return []
     return rows.to_dict(orient="records")
+
+
+def list_latest_daily_changes(ts_codes: list[str]) -> dict[str, dict[str, object]]:
+    if not ts_codes:
+        return {}
+
+    daily_root = settings.data_dir / "raw" / "daily"
+    if not daily_root.exists():
+        return {}
+
+    part_globs: list[str] = []
+    for code in ts_codes:
+        code_dir = daily_root / f"ts_code={code}"
+        if code_dir.exists():
+            part_globs.append(str(code_dir / "year=*/part-*.parquet"))
+    if not part_globs:
+        return {}
+
+    query = f"""
+        SELECT ts_code,
+               trade_date,
+               COALESCE(change, close - pre_close) AS change,
+               COALESCE(pct_chg, (close - pre_close) / NULLIF(pre_close, 0) * 100) AS pct_chg
+        FROM (
+            SELECT ts_code,
+                   trade_date,
+                   change,
+                   pct_chg,
+                   close,
+                   pre_close,
+                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+            FROM read_parquet(?, hive_partitioning=1)
+        )
+        WHERE rn = 1
+    """
+    with get_connection(read_only=True) as con:
+        try:
+            rows = con.execute(query, [part_globs]).fetchdf()
+        except (duckdb.CatalogException, duckdb.IOException):
+            return {}
+
+    if rows.empty:
+        return {}
+
+    rows = rows.where(pd.notna(rows), None)
+    result: dict[str, dict[str, object]] = {}
+    for row in rows.to_dict(orient="records"):
+        ts_code = row.pop("ts_code", None)
+        if ts_code:
+            result[ts_code] = row
+    return result
+
+
+def list_daily_changes_for_date(ts_codes: list[str], trade_date: str) -> dict[str, dict[str, object]]:
+    if not ts_codes or not trade_date:
+        return {}
+
+    daily_root = settings.data_dir / "raw" / "daily"
+    if not daily_root.exists():
+        return {}
+
+    part_globs: list[str] = []
+    for code in ts_codes:
+        code_dir = daily_root / f"ts_code={code}"
+        if code_dir.exists():
+            part_globs.append(str(code_dir / "year=*/part-*.parquet"))
+    if not part_globs:
+        return {}
+
+    placeholders = ", ".join(["?"] * len(ts_codes))
+    query = f"""
+        SELECT ts_code,
+               trade_date,
+               COALESCE(change, close - pre_close) AS change,
+               COALESCE(pct_chg, (close - pre_close) / NULLIF(pre_close, 0) * 100) AS pct_chg
+        FROM read_parquet(?, hive_partitioning=1)
+        WHERE trade_date = ? AND ts_code IN ({placeholders})
+    """
+    with get_connection(read_only=True) as con:
+        try:
+            rows = con.execute(query, [part_globs, trade_date, *ts_codes]).fetchdf()
+        except (duckdb.CatalogException, duckdb.IOException):
+            return {}
+
+    if rows.empty:
+        return {}
+
+    rows = rows.where(pd.notna(rows), None)
+    result: dict[str, dict[str, object]] = {}
+    for row in rows.to_dict(orient="records"):
+        ts_code = row.pop("ts_code", None)
+        if ts_code:
+            result[ts_code] = row
+    return result
+
+
+def get_next_trade_date(ts_codes: list[str], trade_date: str) -> str | None:
+    if not ts_codes or not trade_date:
+        return None
+
+    daily_root = settings.data_dir / "raw" / "daily"
+    if not daily_root.exists():
+        return None
+
+    part_globs: list[str] = []
+    for code in ts_codes:
+        code_dir = daily_root / f"ts_code={code}"
+        if code_dir.exists():
+            part_globs.append(str(code_dir / "year=*/part-*.parquet"))
+    if not part_globs:
+        return None
+
+    query = """
+        SELECT MIN(trade_date) AS next_trade_date
+        FROM read_parquet(?, hive_partitioning=1)
+        WHERE trade_date > ?
+    """
+    with get_connection(read_only=True) as con:
+        try:
+            row = con.execute(query, [part_globs, trade_date]).fetchone()
+        except (duckdb.CatalogException, duckdb.IOException):
+            return None
+    if not row:
+        return None
+    return row[0] or None
 
 
 def get_stock_basic_by_code(ts_code: str) -> dict[str, object] | None:

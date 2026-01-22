@@ -4,6 +4,22 @@ import Link from "next/link";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
 
+const formatPct = (value) => {
+  if (value === null || value === undefined || value === "") return "-";
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  const prefix = num > 0 ? "+" : "";
+  return `${prefix}${num.toFixed(2)}%`;
+};
+
+const getChangeClass = (value) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return "change-flat";
+  if (num > 0) return "change-up";
+  if (num < 0) return "change-down";
+  return "change-flat";
+};
+
 export default function Home() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -173,6 +189,7 @@ export default function Home() {
                 <th>名称</th>
                 <th>行业</th>
                 <th>市场</th>
+                <th>近一日涨跌</th>
                 <th>上市日期</th>
                 <th>操作</th>
               </tr>
@@ -180,7 +197,7 @@ export default function Home() {
             <tbody className={loading ? "loading" : ""}>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="empty">
+                  <td colSpan="7" className="empty">
                     <div className="empty-state">
                       <span className="empty-icon">📊</span>
                       <p>暂无数据</p>
@@ -206,6 +223,11 @@ export default function Home() {
                       ) : (
                         "-"
                       )}
+                    </td>
+                    <td title={item.latest_trade_date || ""}>
+                      <span className={`change-pill ${getChangeClass(item.latest_pct_chg)}`}>
+                        {formatPct(item.latest_pct_chg)}
+                      </span>
                     </td>
                     <td>{item.list_date || "-"}</td>
                     <td>

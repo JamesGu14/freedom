@@ -14,6 +14,7 @@ sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings
 from app.data.duckdb_store import get_connection
+from app.data.mongo_stock import list_stock_codes
 
 
 class IndicatorCalculator:
@@ -125,13 +126,14 @@ class IndicatorCalculator:
 
 
 def load_stock_list() -> list[str]:
-    """Load all stock codes from DuckDB."""
-    with get_connection() as con:
-        try:
-            rows = con.execute("SELECT ts_code FROM stock_basic ORDER BY ts_code").fetchall()
-        except Exception as exc:
-            raise SystemExit(f"failed to load stock_basic: {exc}") from exc
-    return [row[0] for row in rows]
+    """Load all stock codes from MongoDB."""
+    try:
+        codes = list_stock_codes()
+    except Exception as exc:
+        raise SystemExit(f"failed to load stock_basic from MongoDB: {exc}") from exc
+    if not codes:
+        raise SystemExit("No stock_basic data available in MongoDB")
+    return codes
 
 
 def load_daily_data(ts_code: str) -> pd.DataFrame:

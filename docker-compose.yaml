@@ -1,7 +1,7 @@
 services:
   nginx:
     image: nginx:alpine
-    # 由 Traefik 接管 80/443，对外不直接暴露
+    # 通过 edge-proxy 转发，对外不直接暴露
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -13,17 +13,6 @@ services:
       proxy:
         aliases:
           - freedom-app
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.freedom.rule=Host(`orkj730900knfznh.zicp.fun`) && PathPrefix(`/freedom`)
-      - traefik.http.routers.freedom.entrypoints=web,websecure
-      - traefik.http.routers.freedom.priority=20
-      - traefik.http.routers.freedom.tls.certresolver=le
-      - traefik.http.services.freedom.loadbalancer.server.port=80
-      # 便于局域网通过 IP 访问（无 Host 头），仅走 http
-      - traefik.http.routers.freedom-ip.rule=PathPrefix(`/freedom`)
-      - traefik.http.routers.freedom-ip.entrypoints=web
-      - traefik.http.routers.freedom-ip.priority=5
 
   backend:
     build:
@@ -61,10 +50,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /freedom/api
     expose:
       - "3000"
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: /freedom/api
     depends_on:
       - backend
 

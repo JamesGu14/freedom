@@ -9,6 +9,7 @@ from app.services.stocks_service import (
     get_industries,
     get_stock_basic,
     get_stock_basic_by_ts_code,
+    get_latest_daily_changes,
     sync_stock_basic,
 )
 
@@ -31,6 +32,15 @@ def list_stocks(
         ts_code=ts_code,
         industry=industry,
     )
+    codes = [item.get("ts_code") for item in items if item.get("ts_code")]
+    change_map = get_latest_daily_changes(codes)
+    for item in items:
+        change = change_map.get(item.get("ts_code"))
+        if not change:
+            continue
+        item["latest_trade_date"] = change.get("trade_date")
+        item["latest_change"] = change.get("change")
+        item["latest_pct_chg"] = change.get("pct_chg")
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
@@ -41,9 +51,9 @@ def list_industries() -> dict[str, list[str]]:
 
 
 @router.post("/stocks/sync")
-def sync_stocks() -> dict[str, int]:
+def sync_stocks(source: str | None = Query(default=None)) -> dict[str, int | str]:
     try:
-        result = sync_stock_basic()
+        result = sync_stock_basic(source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

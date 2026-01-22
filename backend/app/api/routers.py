@@ -5,6 +5,7 @@ from app.api.routes import (
     daily_signals_router,
     health_router,
     signal_router,
+    stock_groups_router,
     stocks_router,
     strategies_router,
 )
@@ -15,4 +16,5 @@ router.include_router(stocks_router, tags=["stocks"])
 router.include_router(strategies_router, tags=["strategies"])
 router.include_router(signal_router, tags=["signal"])
 router.include_router(daily_signals_router, tags=["daily_signals"])
+router.include_router(stock_groups_router, tags=["stock_groups"])
 router.include_router(backtests_router, tags=["backtests"])
