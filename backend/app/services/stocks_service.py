@@ -9,10 +9,9 @@ from app.data.duckdb_store import (
     get_next_trade_date,
     list_indicators,
     list_latest_daily_changes,
-    load_stock_basic_df,
-    replace_stock_basic,
 )
 from app.data.mongo_stock import (
+    count_stock_basic,
     get_stock_basic_by_code,
     list_industries,
     list_stock_basic,
@@ -30,28 +29,26 @@ def _normalize_df(df: pd.DataFrame) -> list[dict[str, object]]:
 
 def sync_stock_basic(source: str | None = None) -> dict[str, int | str]:
     source_value = (source or "tushare").lower()
-    df: pd.DataFrame | None = None
-
+    if source_value in {"mongo", "mongodb"}:
+        mongo_count = count_stock_basic()
+        if mongo_count == 0:
+            raise ValueError("MongoDB stock_basic is empty or missing")
+        return {"rows": mongo_count, "source": "mongo"}
     if source_value == "duckdb":
-        df = load_stock_basic_df()
-        if df.empty:
-            raise ValueError("DuckDB stock_basic is empty or missing")
-    else:
-        try:
-            df = fetch_stock_basic()
-            replace_stock_basic(df)
-            source_value = "tushare"
-        except ValueError:
-            if source is not None:
-                raise
-            df = load_stock_basic_df()
-            if df.empty:
-                raise ValueError("DuckDB stock_basic is empty or missing")
-            source_value = "duckdb"
+        raise ValueError("DuckDB stock_basic is no longer supported")
 
-    records = _normalize_df(df)
-    mongo_count = upsert_stock_basic(records)
-    return {"rows": mongo_count, "source": source_value}
+    try:
+        df = fetch_stock_basic()
+        records = _normalize_df(df)
+        mongo_count = upsert_stock_basic(records)
+        return {"rows": mongo_count, "source": "tushare"}
+    except ValueError:
+        if source is not None:
+            raise
+        mongo_count = count_stock_basic()
+        if mongo_count == 0:
+            raise ValueError("MongoDB stock_basic is empty or missing")
+        return {"rows": mongo_count, "source": "mongo"}
 
 
 def get_stock_basic(

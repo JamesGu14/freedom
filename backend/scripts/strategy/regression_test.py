@@ -10,8 +10,9 @@ import pandas as pd
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
-from app.data.duckdb_store import get_connection, list_daily, list_stk_limit  # noqa: E402
+from app.data.duckdb_store import list_daily, list_stk_limit  # noqa: E402
 from app.core.config import settings  # noqa: E402
+from app.data.mongo_stock import get_ts_code_by_symbol, list_stock_symbols  # noqa: E402
 from scripts.strategy.second import EarlyBreakoutSignalModel  # noqa: E402
 from scripts.strategy.third import DailySignalModel  # noqa: E402
 
@@ -68,23 +69,11 @@ class RegressionTest:
     def _resolve_ts_code(self, stock_code: str) -> str:
         if "." in stock_code:
             return stock_code
-        with get_connection() as con:
-            row = con.execute(
-                "SELECT ts_code FROM stock_basic WHERE symbol = ? LIMIT 1",
-                [stock_code],
-            ).fetchone()
-        if not row:
-            return stock_code
-        return row[0]
+        ts_code = get_ts_code_by_symbol(stock_code)
+        return ts_code or stock_code
 
     def _list_stock_symbols(self) -> list[str]:
-        with get_connection() as con:
-            rows = con.execute(
-                "SELECT symbol FROM stock_basic "
-                "WHERE symbol LIKE '600%' OR symbol LIKE '000%' OR symbol LIKE '300%' "
-                "ORDER BY symbol"
-            ).fetchall()
-        return [row[0] for row in rows]
+        return list_stock_symbols(prefixes=["600", "000", "300"])
 
     def test(
         self,

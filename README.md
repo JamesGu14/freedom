@@ -8,7 +8,7 @@
 
 ### 1.1 目标（MVP）
 
-- **数据闭环**：每日盘后拉取全市场股票日线行情 + daily_basic + 基础信息，落地到 **Parquet**，并可用 **DuckDB** 高效查询。
+- **数据闭环**：每日盘后拉取全市场股票日线行情 + daily_basic + 基础信息，行情与指标落地到 **Parquet**，stock_basic 写入 **MongoDB**，并可用 **DuckDB** 高效查询。
 - **指标闭环**：计算一组常用技术指标与衍生特征，存入 Feature Store（DuckDB 表/视图）。
 - **策略闭环**：策略管理（CRUD + 版本化），支持按 `strategy + date + symbol` 返回 `BUY/SELL/HOLD`。
 - **回测闭环**：支持**单只股票**天级回测（默认 T 日收盘产生信号，T+1 开盘成交），输出关键绩效指标与交易明细。
@@ -32,11 +32,7 @@
 
 ---
 
-## 2.1 DuckDB 数据库结构（含 Parquet 分区）
-
-DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/索引表存储，并通过 `read_parquet()` 直接查询分区 Parquet 数据。
-
-### 2.1.1 DuckDB 表（实际库内）
+## 2.1 MongoDB 集合
 
 **stock_basic**（实际字段）
 
@@ -51,6 +47,12 @@ DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/
   - `market` (VARCHAR)
   - `list_date` (VARCHAR, YYYYMMDD)
 
+## 2.2 DuckDB 数据库结构（含 Parquet 分区）
+
+DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/索引表存储，并通过 `read_parquet()` 直接查询分区 Parquet 数据。
+
+### 2.2.1 DuckDB 表（实际库内）
+
 **adj_factor**（实际字段）
 
 - 来源：TuShare `adj_factor`
@@ -60,11 +62,11 @@ DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/
   - `trade_date` (VARCHAR, YYYYMMDD)
   - `adj_factor` (DOUBLE)
 
-### 2.1.2 DuckDB 视图
+### 2.2.2 DuckDB 视图
 
 - 当前库内 **无业务视图**。仅存在 DuckDB/SQLite 的系统视图（如 `duckdb_tables`, `sqlite_master` 等），未在本项目中使用。
 
-### 2.1.3 Parquet 分区数据集（DuckDB 通过 read_parquet 查询）
+### 2.2.3 Parquet 分区数据集（DuckDB 通过 read_parquet 查询）
 
 **daily**（原始日线行情）
 
@@ -149,7 +151,7 @@ flowchart LR
 
 触发：每个交易日盘后（建议 16:30~18:00），以交易日历为准。
 输入：TuShare token、交易日 trade_date。
-输出：按日增量写入 Parquet（ts_code/year 分区），必要时写入 DuckDB 索引表。
+输出：按日增量写入 Parquet（ts_code/year 分区），stock_basic 写入 MongoDB，必要时写入 DuckDB 索引表。
 
 采集内容（建议最小集）：
 
@@ -304,7 +306,6 @@ data/
     daily_basic/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
     daily_limit/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
     adj_factor/trade_date=YYYYMMDD/part-*.parquet
-    stock_basic/part-*.parquet
     trade_cal/part-*.parquet
   features/
     features_daily/trade_date=YYYYMMDD/part-*.parquet

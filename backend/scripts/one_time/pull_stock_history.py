@@ -13,17 +13,17 @@ SCRIPT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(SCRIPT_ROOT))
 
 from app.data.duckdb_store import (
-    get_connection,
     has_stock_data,
     upsert_daily,
     upsert_daily_basic,
     upsert_daily_limit,
 )
+from app.data.mongo_stock import list_stock_codes
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Pull full daily history for each stock in DuckDB and store parquet."
+        description="Pull full daily history for each stock and store parquet."
     )
     parser.add_argument("--start-date", type=str, default="", help="YYYYMMDD, optional")
     parser.add_argument("--end-date", type=str, default="", help="YYYYMMDD, optional")
@@ -32,12 +32,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_stock_list() -> list[str]:
-    with get_connection() as con:
-        try:
-            rows = con.execute("SELECT ts_code FROM stock_basic ORDER BY ts_code").fetchall()
-        except Exception as exc:
-            raise SystemExit(f"failed to load stock_basic: {exc}") from exc
-    return [row[0] for row in rows]
+    try:
+        return list_stock_codes()
+    except Exception as exc:
+        raise SystemExit(f"failed to load stock_basic from MongoDB: {exc}") from exc
 
 
 def main() -> None:

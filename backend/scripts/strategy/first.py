@@ -9,18 +9,17 @@ sys.path.append(str(SCRIPT_ROOT))
 
 import pandas as pd
 
-from app.data.duckdb_store import get_connection, list_indicators  # noqa: E402
+from app.data.duckdb_store import list_indicators  # noqa: E402
+from app.data.mongo_stock import list_stock_codes  # noqa: E402
 from scripts.strategy.base_strategy import BaseStrategy  # noqa: E402
 
 
 def load_all_stocks() -> list[str]:
-    """Load all stock codes from DuckDB."""
-    with get_connection() as con:
-        try:
-            rows = con.execute("SELECT ts_code FROM stock_basic ORDER BY ts_code").fetchall()
-        except Exception as exc:
-            raise SystemExit(f"Failed to load stock_basic: {exc}") from exc
-    return [row[0] for row in rows]
+    """Load all stock codes from MongoDB."""
+    try:
+        return list_stock_codes()
+    except Exception as exc:
+        raise SystemExit(f"Failed to load stock_basic from MongoDB: {exc}") from exc
 
 
 class MaCrossSignalModel(BaseStrategy):

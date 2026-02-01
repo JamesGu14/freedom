@@ -10,11 +10,11 @@ SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
 from app.data.duckdb_store import (  # noqa: E402
-    get_connection,
     list_daily,
     list_daily_basic,
     list_indicators,
 )
+from app.data.mongo_stock import get_ts_code_by_symbol  # noqa: E402
 
 
 class BaseStrategy(ABC):
@@ -36,14 +36,8 @@ class BaseStrategy(ABC):
     def _resolve_ts_code(self, stock_code: str) -> str:
         if "." in stock_code:
             return stock_code
-        with get_connection() as con:
-            row = con.execute(
-                "SELECT ts_code FROM stock_basic WHERE symbol = ? LIMIT 1",
-                [stock_code],
-            ).fetchone()
-        if not row:
-            return stock_code
-        return row[0]
+        ts_code = get_ts_code_by_symbol(stock_code)
+        return ts_code or stock_code
 
     def _load_stock_df_from_duckdb(self, stock_code: str, include_daily_basic: bool) -> pd.DataFrame | None:
         ts_code = self._resolve_ts_code(stock_code)
