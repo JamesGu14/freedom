@@ -63,14 +63,20 @@ def list_daily_signals(
     codes = sorted({item.get("stock_code") for item in items if item.get("stock_code")})
     basics_map = get_stock_basic_map(codes)
     group_map = list_group_names_by_stock_codes(codes)
+    
+    # 获取当前交易日和下一交易日的涨跌数据
+    current_change_map = (
+        get_daily_changes_for_date(codes, trading_date)
+        if trading_date
+        else {}
+    )
+    
     next_trade_date = None
+    next_change_map = {}
     if trading_date:
         next_trade_date = get_next_trade_date_for_codes(codes, trading_date)
-    change_map = (
-        get_daily_changes_for_date(codes, next_trade_date)
-        if next_trade_date
-        else get_latest_daily_changes(codes)
-    )
+        if next_trade_date:
+            next_change_map = get_daily_changes_for_date(codes, next_trade_date)
 
     for item in items:
         code = item.get("stock_code")
@@ -78,11 +84,19 @@ def list_daily_signals(
         item["name"] = basic.get("name")
         item["industry"] = basic.get("industry")
         item["groups"] = group_map.get(code, [])
-        change = change_map.get(code)
-        if change:
-            item["next_trade_date"] = change.get("trade_date")
-            item["next_change"] = change.get("change")
-            item["next_pct_chg"] = change.get("pct_chg")
+        
+        # 当前交易日涨跌
+        current_change = current_change_map.get(code)
+        if current_change:
+            item["current_change"] = current_change.get("change")
+            item["current_pct_chg"] = current_change.get("pct_chg")
+        
+        # 下一交易日涨跌
+        next_change = next_change_map.get(code)
+        if next_change:
+            item["next_trade_date"] = next_change.get("trade_date")
+            item["next_change"] = next_change.get("change")
+            item["next_pct_chg"] = next_change.get("pct_chg")
         else:
             item["next_trade_date"] = next_trade_date
 

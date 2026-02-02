@@ -56,7 +56,10 @@ const buildCalendar = (year, monthIndex) => {
   return cells;
 };
 
+import { useRouter } from "next/router";
+
 export default function DailySignals() {
+  const router = useRouter();
   const [dates, setDates] = useState([]);
   const [dateSet, setDateSet] = useState(new Set());
   const [selectedDate, setSelectedDate] = useState("");
@@ -72,6 +75,14 @@ export default function DailySignals() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasQuery, setHasQuery] = useState(false);
+  const [returnUrl, setReturnUrl] = useState("/daily-signals");
+
+  useEffect(() => {
+    // 使用 router.asPath 获取不带 basePath 的路径（包括查询参数）
+    if (router.isReady) {
+      setReturnUrl(router.asPath);
+    }
+  }, [router.asPath, router.isReady]);
 
   const loadDates = async () => {
     try {
@@ -367,7 +378,9 @@ export default function DailySignals() {
             <thead>
               <tr>
                 <th>股票代码</th>
+                <th>股票名称</th>
                 <th>交易日期</th>
+                <th>当日涨跌</th>
                 <th>策略名</th>
                 <th>信号</th>
                 <th>板块</th>
@@ -379,7 +392,7 @@ export default function DailySignals() {
             <tbody className={loading ? "loading" : ""}>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="empty">
+                  <td colSpan="10" className="empty">
                     <div className="empty-state">
                       <span className="empty-icon">📌</span>
                       <p>
@@ -396,6 +409,15 @@ export default function DailySignals() {
                     <td className="code-cell">{item.stock_code}</td>
                     <td>{item.name || "-"}</td>
                     <td>{formatDate(item.trading_date)}</td>
+                    <td>
+                      {item.current_pct_chg === null || item.current_pct_chg === undefined ? (
+                        <span className="muted-text">-</span>
+                      ) : (
+                        <span className={`change-pill ${getChangeClass(item.current_pct_chg)}`}>
+                          {formatPct(item.current_pct_chg)}
+                        </span>
+                      )}
+                    </td>
                     <td>{item.strategy || "-"}</td>
                     <td>
                       <span className="badge">{item.signal || "BUY"}</span>
@@ -433,7 +455,7 @@ export default function DailySignals() {
                     <td>
                       <Link
                         className="link-button"
-                        href={`/stocks/${item.stock_code}`}
+                        href={`/stocks/${item.stock_code}?returnUrl=${encodeURIComponent(returnUrl)}`}
                       >
                         查看K线
                       </Link>

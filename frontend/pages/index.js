@@ -229,7 +229,7 @@ export default function Home() {
                     </td>
                     <td>{item.list_date || "-"}</td>
                     <td>
-                      <Link className="link-button" href={`/stocks/${item.ts_code}`}>
+                      <Link className="link-button" href={`/stocks/${item.ts_code}?returnUrl=/`}>
                         查看K线
                       </Link>
                     </td>

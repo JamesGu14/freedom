@@ -46,6 +46,15 @@ export default function StockKline() {
   const [adjPageSize] = useState(10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [backHref, setBackHref] = useState("/");
+
+  useEffect(() => {
+    // 从 URL 参数中读取返回链接
+    const { returnUrl } = router.query;
+    if (returnUrl && typeof returnUrl === "string") {
+      setBackHref(decodeURIComponent(returnUrl));
+    }
+  }, [router.query]);
 
   const adjMap = useMemo(() => {
     const map = new Map();
@@ -570,8 +579,8 @@ export default function StockKline() {
           </h1>
           <p className="subtitle">日线数据来自 DuckDB</p>
         </div>
-        <Link className="primary" href="/">
-          返回列表
+        <Link className="primary" href={backHref}>
+          返回
         </Link>
       </header>
 
