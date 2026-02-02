@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
+import { apiFetch } from "../../lib/api";
 
 const formatDateTime = (value) => {
   if (!value) return "-";
@@ -44,7 +42,7 @@ export default function WatchlistGroupDetail() {
   const [error, setError] = useState("");
 
   const loadGroup = async (id) => {
-    const res = await fetch(`${API_BASE}/stock-groups/${id}`);
+    const res = await apiFetch(`/stock-groups/${id}`);
     if (!res.ok) {
       throw new Error(`加载失败: ${res.status}`);
     }
@@ -52,7 +50,7 @@ export default function WatchlistGroupDetail() {
   };
 
   const loadStocks = async (id) => {
-    const res = await fetch(`${API_BASE}/stock-groups/${id}/stocks`);
+    const res = await apiFetch(`/stock-groups/${id}/stocks`);
     if (!res.ok) {
       throw new Error(`加载失败: ${res.status}`);
     }
@@ -92,7 +90,7 @@ export default function WatchlistGroupDetail() {
     setSaving(true);
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/stock-groups/${groupId}/stocks`, {
+      const res = await apiFetch(`/stock-groups/${groupId}/stocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ts_code: trimmed }),
@@ -115,7 +113,7 @@ export default function WatchlistGroupDetail() {
     setSaving(true);
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/stock-groups/${groupId}/stocks/${tsCode}`, {
+      const res = await apiFetch(`/stock-groups/${groupId}/stocks/${tsCode}`, {
         method: "DELETE",
       });
       if (!res.ok) {

@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
+import { apiFetch } from "../lib/api";
 
 const formatPct = (value) => {
   if (value === null || value === undefined || value === "") return "-";
@@ -48,7 +46,7 @@ export default function Home() {
       if (industry) {
         params.set("industry", industry);
       }
-      const res = await fetch(`${API_BASE}/stocks?${params.toString()}`);
+      const res = await apiFetch(`/stocks?${params.toString()}`);
       if (!res.ok) {
         throw new Error(`加载失败: ${res.status}`);
       }
@@ -64,7 +62,7 @@ export default function Home() {
 
   const loadIndustries = async () => {
     try {
-      const res = await fetch(`${API_BASE}/stocks/industries`);
+      const res = await apiFetch(`/stocks/industries`);
       if (!res.ok) {
         return;
       }
@@ -79,7 +77,7 @@ export default function Home() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/stocks/sync`, {
+      const res = await apiFetch(`/stocks/sync`, {
         method: "POST",
       });
       if (!res.ok) {
@@ -117,7 +115,7 @@ export default function Home() {
           <h1>股票列表</h1>
           <p className="subtitle">来自 TuShare 的全市场基础信息</p>
         </div>
-        <button className="primary sync-btn" onClick={syncStocks} disabled={loading}>
+        <button className="primary sync-btn" onClick={syncStocks} disabled={loading} style={{ display: 'none' }}>
           {loading ? (
             <>
               <span className="btn-spinner"></span>
@@ -201,7 +199,7 @@ export default function Home() {
                     <div className="empty-state">
                       <span className="empty-icon">📊</span>
                       <p>暂无数据</p>
-                      <small>点击"获取最新列表"按钮同步数据</small>
+                      <small>请使用搜索功能查找数据</small>
                     </div>
                   </td>
                 </tr>

@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
+import { apiFetch } from "../../lib/api";
 
 const formatDate = (value) => {
   if (!value || value.length !== 8) {
@@ -87,9 +85,9 @@ export default function StockKline() {
     setError("");
     try {
       const [candlesRes, basicRes, featuresRes] = await Promise.all([
-        fetch(`${API_BASE}/stocks/${tsCode}/candles`),
-        fetch(`${API_BASE}/stocks/${tsCode}/basic`),
-        fetch(`${API_BASE}/stocks/${tsCode}/features`),
+        apiFetch(`/stocks/${tsCode}/candles`),
+        apiFetch(`/stocks/${tsCode}/basic`),
+        apiFetch(`/stocks/${tsCode}/features`),
       ]);
       if (!candlesRes.ok) {
         throw new Error(`加载失败: ${candlesRes.status}`);

@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
+import { apiFetch } from "../../lib/api";
 
 const formatDateTime = (value) => {
   if (!value) return "-";
@@ -25,7 +23,7 @@ export default function WatchlistGroups() {
   const loadGroups = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/stock-groups`);
+      const res = await apiFetch(`/stock-groups`);
       if (!res.ok) {
         throw new Error(`加载失败: ${res.status}`);
       }
@@ -52,7 +50,7 @@ export default function WatchlistGroups() {
     setError("");
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/stock-groups`, {
+      const res = await apiFetch(`/stock-groups`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmed }),

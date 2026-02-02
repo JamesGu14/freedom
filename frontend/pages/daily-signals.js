@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
+import { apiFetch } from "../lib/api";
 
 const formatPct = (value) => {
   if (value === null || value === undefined || value === "") return "-";
@@ -77,7 +75,7 @@ export default function DailySignals() {
 
   const loadDates = async () => {
     try {
-      const res = await fetch(`${API_BASE}/daily-signals/dates`);
+      const res = await apiFetch(`/daily-signals/dates`);
       if (!res.ok) {
         return;
       }
@@ -104,7 +102,7 @@ export default function DailySignals() {
 
   const loadStrategies = async () => {
     try {
-      const res = await fetch(`${API_BASE}/daily-signals/strategies`);
+      const res = await apiFetch(`/daily-signals/strategies`);
       if (!res.ok) {
         return;
       }
@@ -134,7 +132,7 @@ export default function DailySignals() {
       if (stockValue.trim()) params.set("stock_code", stockValue.trim());
       if (strategyValue.trim()) params.set("strategy", strategyValue.trim());
       if (signalValue.trim()) params.set("signal", signalValue.trim());
-      const res = await fetch(`${API_BASE}/daily-signals?${params.toString()}`);
+      const res = await apiFetch(`/daily-signals?${params.toString()}`);
       if (!res.ok) {
         throw new Error(`加载失败: ${res.status}`);
       }

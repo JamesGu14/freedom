@@ -22,5 +22,18 @@ class Settings(BaseSettings):
     mongodb_url: str = "mongodb://james:2x%23fdksma%21@localhost:27017/?authSource=admin"
     mongodb_db: str = "freedom"
 
+    jwt_secret: str = "change-me"
+    jwt_algorithm: str = "HS256"
+    access_token_expires_minutes: int = 120
+    refresh_token_expires_days: int = 7
+    auth_cookie_domain: str | None = None
+    auth_cookie_secure: bool = False
+    auth_cookie_samesite: str = "lax"
+
+    admin_username: str = "james"
+    admin_password: str = "james1031"
+
+    cors_allow_origins: str = "http://localhost:3000"
+
 
 settings = Settings()

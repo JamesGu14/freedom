@@ -10,6 +10,7 @@ nohup.out
 __pycache__/
 *.py[codz]
 *$py.class
+bak/
 
 # C extensions
 *.so
