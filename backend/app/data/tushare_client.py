@@ -66,3 +66,49 @@ def fetch_shenwan_members(
     if df is None:
         raise ValueError("TuShare returned empty shenwan member data")
     return df
+
+
+def fetch_shenwan_daily(trade_date: str) -> pd.DataFrame:
+    if not settings.tushare_token:
+        raise ValueError("TUSHARE_TOKEN is required")
+
+    if not trade_date:
+        raise ValueError("trade_date is required")
+
+    try:
+        pro = ts.pro_api(settings.tushare_token)
+        df = pro.sw_daily(trade_date=trade_date)
+    except Exception as exc:
+        raise ValueError(f"TuShare request failed: {exc}") from exc
+
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_trade_calendar(
+    *,
+    exchange: str = "SSE",
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    if not settings.tushare_token:
+        raise ValueError("TUSHARE_TOKEN is required")
+
+    if not start_date or not end_date:
+        raise ValueError("start_date and end_date are required")
+
+    try:
+        pro = ts.pro_api(settings.tushare_token)
+        df = pro.trade_cal(
+            exchange=exchange,
+            start_date=start_date,
+            end_date=end_date,
+            fields="exchange,cal_date,is_open,pretrade_date",
+        )
+    except Exception as exc:
+        raise ValueError(f"TuShare request failed: {exc}") from exc
+
+    if df is None:
+        return pd.DataFrame()
+    return df

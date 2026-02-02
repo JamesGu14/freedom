@@ -35,6 +35,9 @@ function AppShell({ Component, pageProps }) {
             <Link href="/sectors" className="nav-link">
               板块
             </Link>
+            <Link href="/sector-ranking" className="nav-link">
+              板块排名
+            </Link>
             <Link href="/daily-signals" className="nav-link">
               Daily Signals
             </Link>

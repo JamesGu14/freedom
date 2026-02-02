@@ -19,6 +19,142 @@
   --glow: 0 0 0 1px rgba(226, 59, 46, 0.12), 0 12px 30px rgba(226, 59, 46, 0.15);
 }
 
+.sector-ranking-page .ranking-header {
+  align-items: center;
+}
+
+.ranking-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.level-tab {
+  border: 1px solid var(--border-light);
+  background: var(--panel);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.level-tab.active {
+  color: var(--ink);
+  border-color: rgba(226, 59, 46, 0.3);
+  background: rgba(226, 59, 46, 0.08);
+}
+
+.ranking-section {
+  margin-bottom: 32px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.section-title h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.ranking-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.ranking-card {
+  background: var(--panel);
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ranking-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.ranking-card-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ranking-card-body {
+  display: grid;
+  gap: 12px;
+}
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ranking-list-title {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ranking-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.ranking-rank {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.ranking-name {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.ranking-name:hover {
+  text-decoration: underline;
+}
+
+.avg-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+}
+
+.avg-panel {
+  padding: 0;
+}
+
+.avg-panel-header {
+  padding: 16px 20px;
+  font-weight: 700;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: rgba(226, 59, 46, 0.06);
+}
+
+.avg-panel table {
+  width: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1442,6 +1578,10 @@ td:first-child {
 @media (max-width: 900px) {
   .page {
     padding: 20px 16px;
+  }
+
+  .ranking-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .header {

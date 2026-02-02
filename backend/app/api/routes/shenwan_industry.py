@@ -163,6 +163,23 @@ def get_sector_detail(
         **filter_kwargs,
     )
 
+    ts_codes = [item.get("ts_code") for item in members if item.get("ts_code")]
+    pct_map = get_last_n_days_pct_chg(ts_codes, n=3) if ts_codes else {}
+    for item in members:
+        code = item.get("ts_code")
+        if code:
+            entry = pct_map.get(code, {})
+            item["pct_chg_3d"] = entry.get("pct_chg_3d")
+            item["pct_chg_1"] = entry.get("pct_chg_1")
+            item["pct_chg_2"] = entry.get("pct_chg_2")
+            item["pct_chg_3"] = entry.get("pct_chg_3")
+            item["pct_chg_1_date"] = entry.get("pct_chg_1_date")
+            item["pct_chg_2_date"] = entry.get("pct_chg_2_date")
+            item["pct_chg_3_date"] = entry.get("pct_chg_3_date")
+        else:
+            item["pct_chg_3d"] = item["pct_chg_1"] = item["pct_chg_2"] = item["pct_chg_3"] = None
+            item["pct_chg_1_date"] = item["pct_chg_2_date"] = item["pct_chg_3_date"] = None
+
     breadcrumbs: list[dict[str, object]] = []
     level1_code = industry.get("level1_code")
     level2_code = industry.get("level2_code")

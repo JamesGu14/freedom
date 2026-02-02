@@ -10,6 +10,39 @@ const formatDate = (value) => {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
 };
 
+const formatPct = (value) => {
+  if (value === null || value === undefined || value === "") return "-";
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  const prefix = num > 0 ? "+" : "";
+  return `${prefix}${num.toFixed(2)}%`;
+};
+
+const getChangeClass = (value) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return "change-flat";
+  if (num > 0) return "change-up";
+  if (num < 0) return "change-down";
+  return "change-flat";
+};
+
+const getThreeDayChanges = (row) => {
+  const items = [
+    { value: row.pct_chg_1, date: row.pct_chg_1_date },
+    { value: row.pct_chg_2, date: row.pct_chg_2_date },
+    { value: row.pct_chg_3, date: row.pct_chg_3_date },
+  ];
+
+  return items
+    .slice()
+    .sort((a, b) => {
+      if (!a.date && !b.date) return 0;
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return String(a.date).localeCompare(String(b.date));
+    });
+};
+
 export default function SectorDetail() {
   const router = useRouter();
   const { index_code: indexCode, version: versionQuery } = router.query;
@@ -144,6 +177,8 @@ export default function SectorDetail() {
               <tr>
                 <th>股票代码</th>
                 <th>股票名称</th>
+                <th className="th-numeric">近三日分别涨跌</th>
+                <th className="th-numeric">近三日涨跌</th>
                 <th>纳入日期</th>
                 <th>剔除日期</th>
                 <th>状态</th>
@@ -155,6 +190,24 @@ export default function SectorDetail() {
                 <tr key={`${item.ts_code}-${item.l3_code}-${item.in_date}`}>
                   <td className="code-cell">{item.ts_code}</td>
                   <td className="name-cell">{item.name || "-"}</td>
+                  <td className="pct-three-days">
+                    {getThreeDayChanges(item).map((entry, index) => (
+                      <span
+                        key={`${item.ts_code}-pct-${index}`}
+                        className={`change-pill change-pill-sm ${getChangeClass(
+                          entry.value
+                        )}`}
+                        title={entry.date ? `交易日 ${formatDate(entry.date)}` : "交易日未知"}
+                      >
+                        {formatPct(entry.value)}
+                      </span>
+                    ))}
+                  </td>
+                  <td className="th-numeric">
+                    <span className={`change-pill ${getChangeClass(item.pct_chg_3d)}`}>
+                      {formatPct(item.pct_chg_3d)}
+                    </span>
+                  </td>
                   <td>{formatDate(item.in_date)}</td>
                   <td>{formatDate(item.out_date)}</td>
                   <td>
