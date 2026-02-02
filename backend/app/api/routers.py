@@ -6,6 +6,7 @@ from app.api.routes import (
     daily_signals_router,
     health_router,
     signal_router,
+    shenwan_industry_router,
     stock_groups_router,
     stocks_router,
     strategies_router,
@@ -27,6 +28,11 @@ router.include_router(
 )
 router.include_router(
     signal_router, tags=["signal"], dependencies=[Depends(get_current_user)]
+)
+router.include_router(
+    shenwan_industry_router,
+    tags=["shenwan_industry"],
+    dependencies=[Depends(get_current_user)],
 )
 router.include_router(
     daily_signals_router, tags=["daily_signals"], dependencies=[Depends(get_current_user)]

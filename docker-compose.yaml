@@ -26,6 +26,7 @@ services:
       DUCKDB_PATH: /data/quant.duckdb
       REDIS_URL: redis://redis:6379/0
       MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
+      ACCESS_TOKEN_EXPIRES_MINUTES: 2880
     volumes:
       - ./data:/data
     depends_on:
@@ -42,6 +43,7 @@ services:
       DUCKDB_PATH: /data/quant.duckdb
       REDIS_URL: redis://redis:6379/0
       MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
+      ACCESS_TOKEN_EXPIRES_MINUTES: 2880
     volumes:
       - ./data:/data
     depends_on:

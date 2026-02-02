@@ -1,33 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 
 const formatDate = (value) => {
-  if (!value || value.length !== 8) {
-    return value || "";
-  }
-  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  if (value == null || value === "") return "";
+  const s = String(value).trim();
+  if (s.length !== 8) return s || "";
+  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+};
+
+/** 统一 trade_date 为字符串，便于与 indicators 的 trade_date 一致作为 Map key */
+const normalizeTradeDate = (value) => {
+  if (value == null || value === "") return "";
+  const s = String(value).trim();
+  return s.length === 8 ? s : String(value);
 };
 
 const normalizeDailyRows = (rows) => {
   const map = new Map();
-  rows.forEach((row) => {
-    if (!row?.trade_date) {
-      return;
-    }
-    map.set(row.trade_date, row);
+  (rows || []).forEach((row) => {
+    const key = normalizeTradeDate(row?.trade_date);
+    if (!key) return;
+    map.set(key, row);
   });
   return Array.from(map.values());
 };
 
 const normalizeAdjRows = (rows) => {
   const map = new Map();
-  rows.forEach((row) => {
-    if (!row?.trade_date) {
-      return;
-    }
-    map.set(row.trade_date, row);
+  (rows || []).forEach((row) => {
+    const key = normalizeTradeDate(row?.trade_date);
+    if (!key) return;
+    map.set(key, row);
   });
   return Array.from(map.values());
 };
@@ -35,6 +40,7 @@ const normalizeAdjRows = (rows) => {
 export default function StockKline() {
   const router = useRouter();
   const { ts_code: tsCode } = router.query;
+  const debugId = useRef(Math.random().toString(36).slice(2, 8));
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
 
@@ -42,11 +48,21 @@ export default function StockKline() {
   const [adjFactor, setAdjFactor] = useState([]);
   const [indicators, setIndicators] = useState([]);
   const [stockInfo, setStockInfo] = useState(null);
+  const [sectorMembers, setSectorMembers] = useState([]);
+  const [sectorLoading, setSectorLoading] = useState(false);
   const [adjPage, setAdjPage] = useState(1);
   const [adjPageSize] = useState(10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [chartError, setChartError] = useState("");
   const [backHref, setBackHref] = useState("/");
+  const [chartReady, setChartReady] = useState(false);
+
+  const setChartEl = useCallback((el) => {
+    chartRef.current = el;
+    setChartReady(!!el);
+  }, []);
+
 
   useEffect(() => {
     // 从 URL 参数中读取返回链接
@@ -54,6 +70,7 @@ export default function StockKline() {
     if (returnUrl && typeof returnUrl === "string") {
       setBackHref(decodeURIComponent(returnUrl));
     }
+    // no-op
   }, [router.query]);
 
   const adjMap = useMemo(() => {
@@ -92,11 +109,13 @@ export default function StockKline() {
     }
     setLoading(true);
     setError("");
+    setSectorLoading(true);
     try {
-      const [candlesRes, basicRes, featuresRes] = await Promise.all([
+      const [candlesRes, basicRes, featuresRes, sectorRes] = await Promise.all([
         apiFetch(`/stocks/${tsCode}/candles`),
         apiFetch(`/stocks/${tsCode}/basic`),
         apiFetch(`/stocks/${tsCode}/features`),
+        apiFetch(`/sectors/members?ts_code=${encodeURIComponent(tsCode)}&is_new=Y&page_size=50`),
       ]);
       if (!candlesRes.ok) {
         throw new Error(`加载失败: ${candlesRes.status}`);
@@ -112,10 +131,17 @@ export default function StockKline() {
         const featuresData = await featuresRes.json();
         setIndicators(featuresData.indicators || []);
       }
+      if (sectorRes.ok) {
+        const sectorData = await sectorRes.json();
+        setSectorMembers(sectorData.items || []);
+      } else {
+        setSectorMembers([]);
+      }
     } catch (err) {
       setError(err.message || "加载失败");
     } finally {
       setLoading(false);
+      setSectorLoading(false);
     }
   };
 
@@ -134,411 +160,426 @@ export default function StockKline() {
       if (!chartRef.current || sortedDaily.length === 0) {
         return;
       }
-      const echarts = await import("echarts");
-      if (!mounted) {
-        return;
-      }
       if (!chartInstanceRef.current) {
-        chartInstanceRef.current = echarts.init(chartRef.current);
-      }
-
-      const dates = sortedDaily.map((item) => formatDate(item.trade_date));
-      const candles = sortedDaily.map((item) => [
-        item.open,
-        item.close,
-        item.low,
-        item.high,
-      ]);
-      const volumes = sortedDaily.map((item) => item.vol || 0);
-
-      // Create indicator map for quick lookup
-      const indicatorMap = new Map();
-      indicators.forEach((ind) => {
-        if (ind.trade_date) {
-          indicatorMap.set(ind.trade_date, ind);
+        const echartsModule = await import("echarts");
+        const echarts = echartsModule?.default ?? echartsModule;
+        if (!echarts?.init) {
+          throw new Error("ECharts 初始化失败");
         }
+        if (!mounted || !chartRef.current) return;
+        chartInstanceRef.current = echarts.init(chartRef.current, null, { renderer: "canvas" });
+      }
+      // 等待容器完成布局后再 setOption，避免宽高为 0 导致不绘制
+      await new Promise((r) => requestAnimationFrame(r));
+      if (!mounted || !chartInstanceRef.current) return;
+      console.log("[KLINE]", debugId.current, "setOption...");
+
+      const toNum = (v) => {
+        if (v == null || v === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      // 兼容接口字段：优先 open/close/low/high/vol，备选 open_price 等
+      const ohlc = (item) => ({
+        open: toNum(item.open ?? item.open_price),
+        close: toNum(item.close ?? item.close_price),
+        low: toNum(item.low ?? item.low_price),
+        high: toNum(item.high ?? item.high_price),
+        vol: toNum(item.vol ?? item.volumn ?? item.volume),
       });
+      const dates = sortedDaily.map((item) => formatDate(item.trade_date));
+      const candles = sortedDaily.map((item) => {
+        const { open: o, close: c, low: l, high: h } = ohlc(item);
+        return [o ?? 0, c ?? 0, l ?? 0, h ?? 0];
+      });
+      const volumes = sortedDaily.map((item) => ohlc(item).vol ?? 0);
+
+      // Create indicator map for quick lookup（key 统一为字符串，避免 number/string 不一致）
+      const indicatorMap = new Map();
+      (indicators || []).forEach((ind) => {
+        const key = normalizeTradeDate(ind.trade_date);
+        if (key) indicatorMap.set(key, ind);
+      });
+
+      const getInd = (item) => indicatorMap.get(normalizeTradeDate(item.trade_date));
 
       // Get MA values aligned with daily data
-      const ma5Values = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.ma5 ?? null;
-      });
-      const ma10Values = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.ma10 ?? null;
-      });
-      const ma20Values = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.ma20 ?? null;
-      });
-      const ma30Values = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.ma30 ?? null;
-      });
+      const ma5Values = sortedDaily.map((item) => getInd(item)?.ma5 ?? null);
+      const ma10Values = sortedDaily.map((item) => getInd(item)?.ma10 ?? null);
+      const ma20Values = sortedDaily.map((item) => getInd(item)?.ma20 ?? null);
+      const ma30Values = sortedDaily.map((item) => getInd(item)?.ma30 ?? null);
       // Get KDJ values
-      const kdjKValues = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.kdj_k ?? null;
-      });
-      const kdjDValues = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.kdj_d ?? null;
-      });
-      const kdjJValues = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.kdj_j ?? null;
-      });
+      const kdjKValues = sortedDaily.map((item) => getInd(item)?.kdj_k ?? null);
+      const kdjDValues = sortedDaily.map((item) => getInd(item)?.kdj_d ?? null);
+      const kdjJValues = sortedDaily.map((item) => getInd(item)?.kdj_j ?? null);
       // Get MACD values
-      const macdValues = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.macd ?? null;
+      const macdValues = sortedDaily.map((item) => getInd(item)?.macd ?? null);
+      const macdSignalValues = sortedDaily.map((item) => getInd(item)?.macd_signal ?? null);
+      const macdHistValues = sortedDaily.map((item) => getInd(item)?.macd_hist ?? null);
+      const volumeBars = sortedDaily.map((item) => {
+        const { open: o, close: c, vol: v } = ohlc(item);
+        return {
+          value: v ?? 0,
+          itemStyle: {
+            color: (c ?? 0) >= (o ?? 0) ? "#ef4444" : "#22c55e",
+          },
+        };
       });
-      const macdSignalValues = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.macd_signal ?? null;
-      });
-      const macdHistValues = sortedDaily.map((item) => {
-        const ind = indicatorMap.get(item.trade_date);
-        return ind?.macd_hist ?? null;
-      });
-      const volumeBars = sortedDaily.map((item) => ({
-        value: item.vol || 0,
-        itemStyle: {
-          color: (item.close ?? 0) >= (item.open ?? 0) ? "#ef4444" : "#22c55e",
-        },
-      }));
       const totalCount = sortedDaily.length;
       const startIndex = Math.max(totalCount - 120, 0);
       const startPercent = totalCount > 1 ? (startIndex / (totalCount - 1)) * 100 : 0;
 
-      chartInstanceRef.current.setOption({
-        backgroundColor: "#000000",
-        grid: [
-          { left: 40, right: 20, top: 30, height: 280 },
-          { left: 40, right: 20, top: 330, height: 90 },
-          { left: 40, right: 20, top: 450, height: 180 },
-          { left: 40, right: 20, top: 660, height: 180 },
-        ],
-        tooltip: {
-          trigger: "axis",
-          formatter: (params) => {
-            if (!params || params.length === 0) {
-              return "";
-            }
-            const formatNumber = (val) => {
-              if (val == null || val === "") return "-";
-              const num = typeof val === "number" ? val : parseFloat(val);
-              return isNaN(num) ? "-" : num.toFixed(4);
-            };
-            const index = params[0].dataIndex;
-            const date = dates[index];
-            const lines = [`${date}`];
+      chartInstanceRef.current.setOption(
+        {
+          backgroundColor: "#000000",
+          animation: false,
+          grid: [
+            { left: 40, right: 20, top: 30, height: 280 },
+            { left: 40, right: 20, top: 330, height: 90 },
+            { left: 40, right: 20, top: 450, height: 180 },
+            { left: 40, right: 20, top: 660, height: 180 },
+          ],
+          tooltip: {
+            trigger: "axis",
+            formatter: (params) => {
+              if (!params || params.length === 0) {
+                return "";
+              }
+              const formatNumber = (val) => {
+                if (val == null || val === "") return "-";
+                const num = typeof val === "number" ? val : parseFloat(val);
+                return isNaN(num) ? "-" : num.toFixed(4);
+              };
+              const index = params[0].dataIndex;
+              const date = dates[index];
+              const lines = [`${date}`];
 
-            // K线数据 - 从原始数据读取，确保准确性
-            if (index >= 0 && index < sortedDaily.length) {
-              const item = sortedDaily[index];
-              lines.push(
-                `开盘: ${formatNumber(item.open)}`,
-                `收盘: ${formatNumber(item.close)}`,
-                `最低: ${formatNumber(item.low)}`,
-                `最高: ${formatNumber(item.high)}`
-              );
-            }
+              // K线数据 - 从原始数据读取，确保准确性（兼容不同字段名）
+              if (index >= 0 && index < sortedDaily.length) {
+                const item = sortedDaily[index];
+                const o = item.open ?? item.open_price;
+                const c = item.close ?? item.close_price;
+                const l = item.low ?? item.low_price;
+                const h = item.high ?? item.high_price;
+                lines.push(
+                  `开盘: ${formatNumber(o)}`,
+                  `收盘: ${formatNumber(c)}`,
+                  `最低: ${formatNumber(l)}`,
+                  `最高: ${formatNumber(h)}`
+                );
+              }
 
-            // MA数据
-            const ma5 = params.find((item) => item.seriesName === "MA5");
-            const ma10 = params.find((item) => item.seriesName === "MA10");
-            const ma20 = params.find((item) => item.seriesName === "MA20");
-            const ma30 = params.find((item) => item.seriesName === "MA30");
-            if (ma5 || ma10 || ma20 || ma30) {
-              lines.push("");
-              if (ma5) lines.push(`MA5: ${formatNumber(ma5.value)}`);
-              if (ma10) lines.push(`MA10: ${formatNumber(ma10.value)}`);
-              if (ma20) lines.push(`MA20: ${formatNumber(ma20.value)}`);
-              if (ma30) lines.push(`MA30: ${formatNumber(ma30.value)}`);
-            }
+              // MA数据
+              const ma5 = params.find((item) => item.seriesName === "MA5");
+              const ma10 = params.find((item) => item.seriesName === "MA10");
+              const ma20 = params.find((item) => item.seriesName === "MA20");
+              const ma30 = params.find((item) => item.seriesName === "MA30");
+              if (ma5 || ma10 || ma20 || ma30) {
+                lines.push("");
+                if (ma5) lines.push(`MA5: ${formatNumber(ma5.value)}`);
+                if (ma10) lines.push(`MA10: ${formatNumber(ma10.value)}`);
+                if (ma20) lines.push(`MA20: ${formatNumber(ma20.value)}`);
+                if (ma30) lines.push(`MA30: ${formatNumber(ma30.value)}`);
+              }
 
-            // 成交量
-            const volume = params.find((item) => item.seriesName === "成交量");
-            if (volume) {
-              lines.push(`成交量: ${formatNumber(volume.value)}`);
-            }
+              // 成交量
+              const volume = params.find((item) => item.seriesName === "成交量");
+              if (volume) {
+                lines.push(`成交量: ${formatNumber(volume.value)}`);
+              }
 
-            // KDJ数据
-            const kdjK = params.find((item) => item.seriesName === "KDJ-K");
-            const kdjD = params.find((item) => item.seriesName === "KDJ-D");
-            const kdjJ = params.find((item) => item.seriesName === "KDJ-J");
-            if (kdjK || kdjD || kdjJ) {
-              lines.push("");
-              if (kdjK) lines.push(`KDJ-K: ${formatNumber(kdjK.value)}`);
-              if (kdjD) lines.push(`KDJ-D: ${formatNumber(kdjD.value)}`);
-              if (kdjJ) lines.push(`KDJ-J: ${formatNumber(kdjJ.value)}`);
-            }
+              // KDJ数据
+              const kdjK = params.find((item) => item.seriesName === "KDJ-K");
+              const kdjD = params.find((item) => item.seriesName === "KDJ-D");
+              const kdjJ = params.find((item) => item.seriesName === "KDJ-J");
+              if (kdjK || kdjD || kdjJ) {
+                lines.push("");
+                if (kdjK) lines.push(`KDJ-K: ${formatNumber(kdjK.value)}`);
+                if (kdjD) lines.push(`KDJ-D: ${formatNumber(kdjD.value)}`);
+                if (kdjJ) lines.push(`KDJ-J: ${formatNumber(kdjJ.value)}`);
+              }
 
-            // MACD数据
-            const macd = params.find((item) => item.seriesName === "MACD");
-            const macdSignal = params.find((item) => item.seriesName === "MACD-Signal");
-            const macdHist = params.find((item) => item.seriesName === "MACD-Hist");
-            if (macd || macdSignal || macdHist) {
-              lines.push("");
-              if (macd) lines.push(`MACD: ${formatNumber(macd.value)}`);
-              if (macdSignal) lines.push(`MACD-Signal: ${formatNumber(macdSignal.value)}`);
-              if (macdHist) lines.push(`MACD-Hist: ${formatNumber(macdHist.value)}`);
-            }
+              // MACD数据
+              const macd = params.find((item) => item.seriesName === "MACD");
+              const macdSignal = params.find((item) => item.seriesName === "MACD-Signal");
+              const macdHist = params.find((item) => item.seriesName === "MACD-Hist");
+              if (macd || macdSignal || macdHist) {
+                lines.push("");
+                if (macd) lines.push(`MACD: ${formatNumber(macd.value)}`);
+                if (macdSignal) lines.push(`MACD-Signal: ${formatNumber(macdSignal.value)}`);
+                if (macdHist) lines.push(`MACD-Hist: ${formatNumber(macdHist.value)}`);
+              }
 
-            return lines.join("<br/>");
-          },
-        },
-        axisPointer: { link: [{ xAxisIndex: [0, 1, 2, 3] }] },
-        xAxis: [
-          {
-            type: "category",
-            data: dates,
-            boundaryGap: true,
-            axisLine: { lineStyle: { color: "#666666" } },
-            axisLabel: { color: "#999999" },
-          },
-          {
-            type: "category",
-            data: dates,
-            gridIndex: 1,
-            boundaryGap: true,
-            axisLine: { lineStyle: { color: "#666666" } },
-            axisLabel: { color: "#999999" },
-          },
-          {
-            type: "category",
-            data: dates,
-            gridIndex: 2,
-            boundaryGap: true,
-            axisLine: { lineStyle: { color: "#666666" } },
-            axisLabel: { color: "#999999" },
-          },
-          {
-            type: "category",
-            data: dates,
-            gridIndex: 3,
-            boundaryGap: true,
-            axisLine: { lineStyle: { color: "#666666" } },
-            axisLabel: { color: "#999999" },
-          },
-        ],
-        yAxis: [
-          {
-            scale: true,
-            axisLabel: { color: "#999999" },
-            splitLine: { lineStyle: { color: "#333333" } },
-          },
-          {
-            gridIndex: 1,
-            axisLabel: { color: "#999999" },
-            splitLine: { show: false },
-          },
-          {
-            gridIndex: 2,
-            axisLabel: { color: "#999999" },
-            splitLine: { lineStyle: { color: "#333333" } },
-          },
-          {
-            gridIndex: 3,
-            axisLabel: { color: "#999999" },
-            splitLine: { lineStyle: { color: "#333333" } },
-          },
-        ],
-        dataZoom: [
-          {
-            type: "inside",
-            xAxisIndex: [0, 1, 2, 3],
-            start: startPercent,
-            end: 100,
-          },
-          {
-            type: "slider",
-            xAxisIndex: [0, 1, 2, 3],
-            start: startPercent,
-            end: 100,
-            bottom: 10,
-            height: 25,
-          },
-        ],
-        graphic: [
-          {
-            type: "text",
-            left: 50,
-            top: 452,
-            style: {
-              text: "KDJ",
-              fontSize: 14,
-              fontWeight: "bold",
-              fill: "#ffffff",
+              return lines.join("<br/>");
             },
           },
-          {
-            type: "text",
-            left: 50,
-            top: 662,
-            style: {
-              text: "MACD",
-              fontSize: 14,
-              fontWeight: "bold",
-              fill: "#ffffff",
+          axisPointer: { link: [{ xAxisIndex: [0, 1, 2, 3] }] },
+          xAxis: [
+            {
+              type: "category",
+              data: dates,
+              boundaryGap: true,
+              axisLine: { lineStyle: { color: "#666666" } },
+              axisLabel: { color: "#999999" },
             },
-          },
-        ],
-        series: [
-          {
-            name: "K线",
-            type: "candlestick",
-            data: candles,
-            barCategoryGap: "10%",
-            itemStyle: {
-              color: "#ef4444",
-              color0: "#22c55e",
-              borderColor: "#ef4444",
-              borderColor0: "#22c55e",
+            {
+              type: "category",
+              data: dates,
+              gridIndex: 1,
+              boundaryGap: true,
+              axisLine: { lineStyle: { color: "#666666" } },
+              axisLabel: { color: "#999999" },
             },
-          },
-          {
-            name: "MA5",
-            type: "line",
-            data: ma5Values,
-            smooth: false,
-            lineStyle: {
-              color: "#ffffff",
-              width: 1,
+            {
+              type: "category",
+              data: dates,
+              gridIndex: 2,
+              boundaryGap: true,
+              axisLine: { lineStyle: { color: "#666666" } },
+              axisLabel: { color: "#999999" },
             },
-            symbol: "none",
-          },
-          {
-            name: "MA10",
-            type: "line",
-            data: ma10Values,
-            smooth: false,
-            lineStyle: {
-              color: "#ff69b4",
-              width: 1,
+            {
+              type: "category",
+              data: dates,
+              gridIndex: 3,
+              boundaryGap: true,
+              axisLine: { lineStyle: { color: "#666666" } },
+              axisLabel: { color: "#999999" },
             },
-            symbol: "none",
-          },
-          {
-            name: "MA20",
-            type: "line",
-            data: ma20Values,
-            smooth: false,
-            lineStyle: {
-              color: "#ffff00",
-              width: 1,
+          ],
+          yAxis: [
+            {
+              scale: true,
+              axisLabel: { color: "#999999" },
+              splitLine: { lineStyle: { color: "#333333" } },
             },
-            symbol: "none",
-          },
-          {
-            name: "MA30",
-            type: "line",
-            data: ma30Values,
-            smooth: false,
-            lineStyle: {
-              color: "#4169e1",
-              width: 1,
+            {
+              gridIndex: 1,
+              axisLabel: { color: "#999999" },
+              splitLine: { show: false },
             },
-            symbol: "none",
-          },
-          {
-            name: "成交量",
-            type: "bar",
-            xAxisIndex: 1,
-            yAxisIndex: 1,
-            data: volumeBars,
-          },
-          // KDJ指标
-          {
-            name: "KDJ-K",
-            type: "line",
-            xAxisIndex: 2,
-            yAxisIndex: 2,
-            data: kdjKValues,
-            smooth: false,
-            lineStyle: {
-              color: "#ff69b4",
-              width: 1,
+            {
+              gridIndex: 2,
+              axisLabel: { color: "#999999" },
+              splitLine: { lineStyle: { color: "#333333" } },
             },
-            symbol: "none",
-          },
-          {
-            name: "KDJ-D",
-            type: "line",
-            xAxisIndex: 2,
-            yAxisIndex: 2,
-            data: kdjDValues,
-            smooth: false,
-            lineStyle: {
-              color: "#4169e1",
-              width: 1,
+            {
+              gridIndex: 3,
+              axisLabel: { color: "#999999" },
+              splitLine: { lineStyle: { color: "#333333" } },
             },
-            symbol: "none",
-          },
-          {
-            name: "KDJ-J",
-            type: "line",
-            xAxisIndex: 2,
-            yAxisIndex: 2,
-            data: kdjJValues,
-            smooth: false,
-            lineStyle: {
-              color: "#ffff00",
-              width: 1,
+          ],
+          dataZoom: [
+            {
+              type: "inside",
+              xAxisIndex: [0, 1, 2, 3],
+              start: startPercent,
+              end: 100,
             },
-            symbol: "none",
-          },
-          // MACD指标
-          {
-            name: "MACD",
-            type: "line",
-            xAxisIndex: 3,
-            yAxisIndex: 3,
-            data: macdValues,
-            smooth: false,
-            lineStyle: {
-              color: "#4169e1",
-              width: 1,
+            {
+              type: "slider",
+              xAxisIndex: [0, 1, 2, 3],
+              start: startPercent,
+              end: 100,
+              bottom: 10,
+              height: 25,
             },
-            symbol: "none",
-          },
-          {
-            name: "MACD-Signal",
-            type: "line",
-            xAxisIndex: 3,
-            yAxisIndex: 3,
-            data: macdSignalValues,
-            smooth: false,
-            lineStyle: {
-              color: "#ff69b4",
-              width: 1,
-            },
-            symbol: "none",
-          },
-          {
-            name: "MACD-Hist",
-            type: "bar",
-            xAxisIndex: 3,
-            yAxisIndex: 3,
-            data: macdHistValues.map((val) => ({
-              value: val,
-              itemStyle: {
-                color: val >= 0 ? "#22c55e" : "#ef4444",
+          ],
+          graphic: [
+            {
+              type: "text",
+              left: 50,
+              top: 452,
+              style: {
+                text: "KDJ",
+                fontSize: 14,
+                fontWeight: "bold",
+                fill: "#ffffff",
               },
-            })),
-          },
-        ],
+            },
+            {
+              type: "text",
+              left: 50,
+              top: 662,
+              style: {
+                text: "MACD",
+                fontSize: 14,
+                fontWeight: "bold",
+                fill: "#ffffff",
+              },
+            },
+          ],
+          series: [
+            {
+              name: "K线",
+              type: "candlestick",
+              data: candles,
+              barCategoryGap: "10%",
+              itemStyle: {
+                color: "#ef4444",
+                color0: "#22c55e",
+                borderColor: "#ef4444",
+                borderColor0: "#22c55e",
+              },
+            },
+            {
+              name: "MA5",
+              type: "line",
+              data: ma5Values,
+              smooth: false,
+              lineStyle: {
+                color: "#ffffff",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "MA10",
+              type: "line",
+              data: ma10Values,
+              smooth: false,
+              lineStyle: {
+                color: "#ff69b4",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "MA20",
+              type: "line",
+              data: ma20Values,
+              smooth: false,
+              lineStyle: {
+                color: "#ffff00",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "MA30",
+              type: "line",
+              data: ma30Values,
+              smooth: false,
+              lineStyle: {
+                color: "#4169e1",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "成交量",
+              type: "bar",
+              xAxisIndex: 1,
+              yAxisIndex: 1,
+              data: volumeBars,
+            },
+            // KDJ指标
+            {
+              name: "KDJ-K",
+              type: "line",
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: kdjKValues,
+              smooth: false,
+              lineStyle: {
+                color: "#ff69b4",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "KDJ-D",
+              type: "line",
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: kdjDValues,
+              smooth: false,
+              lineStyle: {
+                color: "#4169e1",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "KDJ-J",
+              type: "line",
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: kdjJValues,
+              smooth: false,
+              lineStyle: {
+                color: "#ffff00",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            // MACD指标
+            {
+              name: "MACD",
+              type: "line",
+              xAxisIndex: 3,
+              yAxisIndex: 3,
+              data: macdValues,
+              smooth: false,
+              lineStyle: {
+                color: "#4169e1",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "MACD-Signal",
+              type: "line",
+              xAxisIndex: 3,
+              yAxisIndex: 3,
+              data: macdSignalValues,
+              smooth: false,
+              lineStyle: {
+                color: "#ff69b4",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "MACD-Hist",
+              type: "bar",
+              xAxisIndex: 3,
+              yAxisIndex: 3,
+              data: macdHistValues.map((val) => ({
+                value: val,
+                itemStyle: {
+                  color: val >= 0 ? "#22c55e" : "#ef4444",
+                },
+              })),
+            },
+          ],
+        },
+        { notMerge: true }
+      );
+      requestAnimationFrame(() => {
+        if (chartInstanceRef.current) chartInstanceRef.current.resize();
       });
+      if (chartRef.current && chartError) {
+        setChartError("");
+      }
     };
 
-    renderChart();
+    renderChart().catch((err) => {
+      setChartError(err?.message || "图表渲染失败");
+    });
 
     return () => {
       mounted = false;
     };
-  }, [sortedDaily, displayAdj, adjMap, indicators]);
+  }, [sortedDaily, displayAdj, adjMap, indicators, chartReady]);
+
+  useEffect(() => {
+    if (!chartInstanceRef.current || sortedDaily.length === 0) return;
+    const id = requestAnimationFrame(() => {
+      chartInstanceRef.current?.resize();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [sortedDaily.length]);
 
   useEffect(() => {
     return () => {
@@ -559,6 +600,47 @@ export default function StockKline() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const sectorBadges = useMemo(() => {
+    if (sectorLoading || sectorMembers.length === 0) return null;
+    const item = sectorMembers[0];
+    const version = item?.version || "2021";
+    const parts = [];
+    if (item?.l1_name) {
+      parts.push(
+        <Link
+          key="l1"
+          className="sector-badge"
+          href={`/sectors/${item.l1_code}?version=${version}`}
+        >
+          {item.l1_name}
+        </Link>
+      );
+    }
+    if (item?.l2_name && item?.l2_code) {
+      parts.push(
+        <Link
+          key="l2"
+          className="sector-badge"
+          href={`/sectors/${item.l2_code}?version=${version}`}
+        >
+          {item.l2_name}
+        </Link>
+      );
+    }
+    if (item?.l3_name && item?.l3_code) {
+      parts.push(
+        <Link
+          key="l3"
+          className="sector-badge"
+          href={`/sectors/${item.l3_code}?version=${version}`}
+        >
+          {item.l3_name}
+        </Link>
+      );
+    }
+    return parts.length > 0 ? parts : null;
+  }, [sectorMembers, sectorLoading]);
+
   return (
     <main className="page">
       <header className="header">
@@ -578,6 +660,15 @@ export default function StockKline() {
               : "K线"}
           </h1>
           <p className="subtitle">日线数据来自 DuckDB</p>
+          {sectorBadges && (
+            <div className="header-badges">
+              <span className="header-badges-label">申万行业：</span>
+              {sectorBadges}
+              <Link className="link-button header-badges-more" href="/sectors">
+                板块
+              </Link>
+            </div>
+          )}
         </div>
         <Link className="primary" href={backHref}>
           返回
@@ -585,6 +676,7 @@ export default function StockKline() {
       </header>
 
       {error ? <div className="error">{error}</div> : null}
+      {chartError ? <div className="error">{chartError}</div> : null}
 
       <section className="table-wrap">
         {loading ? (
@@ -600,7 +692,7 @@ export default function StockKline() {
           </div>
         ) : (
           <>
-            <div className="chart-canvas" ref={chartRef} />
+            <div className="chart-canvas" ref={setChartEl} />
             <div className="adj-table">
               <h3>复权因子（最近120天）</h3>
               <table>

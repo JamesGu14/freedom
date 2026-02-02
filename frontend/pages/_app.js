@@ -32,6 +32,9 @@ function AppShell({ Component, pageProps }) {
             <Link href="/" className="nav-link">
               首页
             </Link>
+            <Link href="/sectors" className="nav-link">
+              板块
+            </Link>
             <Link href="/daily-signals" className="nav-link">
               Daily Signals
             </Link>

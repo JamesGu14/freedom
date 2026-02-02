@@ -8,6 +8,7 @@ from app.data.duckdb_store import (
     list_daily_changes_for_date,
     get_next_trade_date,
     list_indicators,
+    list_last_n_days_pct_chg,
     list_latest_daily_changes,
 )
 from app.data.mongo_stock import (
@@ -98,3 +99,9 @@ def get_daily_changes_for_date(ts_codes: list[str], trade_date: str) -> dict[str
 
 def get_next_trade_date_for_codes(ts_codes: list[str], trade_date: str) -> str | None:
     return get_next_trade_date(ts_codes, trade_date)
+
+
+def get_last_n_days_pct_chg(
+    ts_codes: list[str], n: int = 3
+) -> dict[str, dict[str, object]]:
+    return list_last_n_days_pct_chg(ts_codes, n=n)

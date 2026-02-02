@@ -348,6 +348,70 @@ def list_latest_daily_changes(ts_codes: list[str]) -> dict[str, dict[str, object
     return result
 
 
+def list_last_n_days_pct_chg(
+    ts_codes: list[str], n: int = 3
+) -> dict[str, dict[str, object]]:
+    """近 N 个交易日涨跌幅合计，key 为 ts_code，value 含 pct_chg_3d（或 pct_chg_nd）。"""
+    if not ts_codes or n < 1:
+        return {}
+
+    daily_root = settings.data_dir / "raw" / "daily"
+    if not daily_root.exists():
+        return {}
+
+    part_globs: list[str] = []
+    for code in ts_codes:
+        code_dir = daily_root / f"ts_code={code}"
+        if code_dir.exists():
+            part_globs.append(str(code_dir / "year=*/part-*.parquet"))
+    if not part_globs:
+        return {}
+
+    query = """
+        SELECT ts_code,
+               MAX(CASE WHEN rn = 1 THEN pct_chg END) AS pct_chg_1,
+               MAX(CASE WHEN rn = 2 THEN pct_chg END) AS pct_chg_2,
+               MAX(CASE WHEN rn = 3 THEN pct_chg END) AS pct_chg_3,
+               MAX(CASE WHEN rn = 1 THEN trade_date END) AS trade_date_1,
+               MAX(CASE WHEN rn = 2 THEN trade_date END) AS trade_date_2,
+               MAX(CASE WHEN rn = 3 THEN trade_date END) AS trade_date_3,
+               SUM(pct_chg) AS pct_chg_nd
+        FROM (
+            SELECT ts_code,
+                   trade_date,
+                   COALESCE(pct_chg, (close - pre_close) / NULLIF(pre_close, 0) * 100) AS pct_chg,
+                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+            FROM read_parquet(?, hive_partitioning=1)
+        )
+        WHERE rn <= ?
+        GROUP BY ts_code
+    """
+    with get_connection(read_only=True) as con:
+        try:
+            rows = con.execute(query, [part_globs, n]).fetchdf()
+        except (duckdb.CatalogException, duckdb.IOException):
+            return {}
+
+    if rows.empty:
+        return {}
+
+    rows = rows.where(pd.notna(rows), None)
+    result: dict[str, dict[str, object]] = {}
+    for row in rows.to_dict(orient="records"):
+        ts_code = row.pop("ts_code", None)
+        if ts_code:
+            result[ts_code] = {
+                "pct_chg_3d": row.get("pct_chg_nd"),
+                "pct_chg_1": row.get("pct_chg_1"),
+                "pct_chg_2": row.get("pct_chg_2"),
+                "pct_chg_3": row.get("pct_chg_3"),
+                "pct_chg_1_date": row.get("trade_date_1"),
+                "pct_chg_2_date": row.get("trade_date_2"),
+                "pct_chg_3_date": row.get("trade_date_3"),
+            }
+    return result
+
+
 def list_daily_changes_for_date(ts_codes: list[str], trade_date: str) -> dict[str, dict[str, object]]:
     if not ts_codes or not trade_date:
         return {}
