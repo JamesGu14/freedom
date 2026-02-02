@@ -75,6 +75,7 @@ def list_daily_signals(
     for item in items:
         code = item.get("stock_code")
         basic = basics_map.get(code, {})
+        item["name"] = basic.get("name")
         item["industry"] = basic.get("industry")
         item["groups"] = group_map.get(code, [])
         change = change_map.get(code)

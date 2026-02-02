@@ -632,6 +632,19 @@ td:first-child {
   color: #475569;
 }
 
+.next-day-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.next-date-label {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .muted-text {
   color: var(--muted);
   font-size: 12px;

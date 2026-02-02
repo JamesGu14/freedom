@@ -379,7 +379,7 @@ export default function DailySignals() {
             <tbody className={loading ? "loading" : ""}>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="empty">
+                  <td colSpan="9" className="empty">
                     <div className="empty-state">
                       <span className="empty-icon">📌</span>
                       <p>
@@ -394,19 +394,27 @@ export default function DailySignals() {
                 items.map((item, idx) => (
                   <tr key={`${item.stock_code}-${item.strategy}-${idx}`}>
                     <td className="code-cell">{item.stock_code}</td>
+                    <td>{item.name || "-"}</td>
                     <td>{formatDate(item.trading_date)}</td>
                     <td>{item.strategy || "-"}</td>
                     <td>
                       <span className="badge">{item.signal || "BUY"}</span>
                     </td>
                     <td>{item.industry ? <span className="badge">{item.industry}</span> : "-"}</td>
-                    <td title={item.next_trade_date || ""}>
+                    <td>
                       {item.next_pct_chg === null || item.next_pct_chg === undefined ? (
-                        <span className="muted-text">暂无下一个交易日数据</span>
+                        <span className="muted-text">暂无数据</span>
                       ) : (
-                        <span className={`change-pill ${getChangeClass(item.next_pct_chg)}`}>
-                          {formatPct(item.next_pct_chg)}
-                        </span>
+                        <div className="next-day-info">
+                          <span className={`change-pill ${getChangeClass(item.next_pct_chg)}`}>
+                            {formatPct(item.next_pct_chg)}
+                          </span>
+                          {item.next_trade_date && (
+                            <span className="next-date-label">
+                              {formatDate(item.next_trade_date)}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td>

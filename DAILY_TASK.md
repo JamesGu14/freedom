@@ -24,6 +24,10 @@ python backend/scripts/one_time/calculate_indicators.py
 计算指定日期的交易信号（BUY信号）并存储到MongoDB。
 
 ```bash
+cd /home/james/projects/freedom/backend && python -m scripts.daily.calculate_signal --start-date 20260126
+```
+
+```bash
 # 计算今天的信号（日期格式：YYYYMMDD 或 YYYY-MM-DD）
 python backend/scripts/daily/calculate_signal.py --given-date 20250126
 # 或
