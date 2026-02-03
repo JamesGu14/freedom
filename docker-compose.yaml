@@ -77,6 +77,16 @@ services:
     volumes:
       - ./data/mongo:/data/db
 
+  qinglong:
+    image: whyour/qinglong:latest
+    ports:
+      - "5700:5700"
+    environment:
+      QlBaseUrl: "/"
+    volumes:
+      - ./data/qinglong:/ql/data
+    restart: unless-stopped
+
 volumes:
   redis-data:
 
