@@ -1,4 +1,5 @@
 import "../styles/globals.css";
+import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect } from "react";
@@ -22,6 +23,10 @@ function AppShell({ Component, pageProps }) {
 
   return (
     <>
+      <Head>
+        <title>Freedom</title>
+        <link rel="icon" href="/freedom/favicon.svg" />
+      </Head>
       <nav className="top-nav">
         <div className="nav-inner">
           <div className="brand">

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import shutil
 import time
 import uuid
@@ -136,20 +137,32 @@ def load_stock_list() -> list[str]:
     return codes
 
 
-def load_daily_data(ts_code: str) -> pd.DataFrame:
+def load_daily_data(ts_code: str, start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
     """Load daily data for a stock from parquet files."""
     daily_root = settings.data_dir / "raw" / "daily" / f"ts_code={ts_code}"
     if not daily_root.exists():
         return pd.DataFrame()
 
     part_glob = str(daily_root / "year=*/part-*.parquet")
+    
+    # Build query with optional date filters
+    where_clauses = ["ts_code = ?"]
+    params = [part_glob, ts_code]
+    
+    if start_date:
+        where_clauses.append("trade_date >= ?")
+        params.append(start_date)
+    if end_date:
+        where_clauses.append("trade_date <= ?")
+        params.append(end_date)
+    
     query = (
-        "SELECT ts_code, trade_date, open, high, low, close, vol, amount "
-        "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
+        f"SELECT ts_code, trade_date, open, high, low, close, vol, amount "
+        f"FROM read_parquet(?) WHERE {' AND '.join(where_clauses)} ORDER BY trade_date"
     )
     with get_connection() as con:
         try:
-            df = con.execute(query, [part_glob, ts_code]).fetchdf()
+            df = con.execute(query, params).fetchdf()
         except Exception as exc:
             print(f"Error loading data for {ts_code}: {exc}")
             return pd.DataFrame()
@@ -160,13 +173,63 @@ def load_daily_data(ts_code: str) -> pd.DataFrame:
     return df
 
 
-def delete_stock_indicators(ts_code: str) -> None:
-    """Delete all historical indicator data for a stock."""
+def delete_stock_indicators(ts_code: str, start_date: str | None = None, end_date: str | None = None) -> None:
+    """Delete historical indicator data for a stock.
+    
+    If start_date and end_date are provided, only delete data within that range.
+    Otherwise, delete all data for the stock.
+    """
     features_base = settings.data_dir / "features" / "indicators"
     stock_dir = features_base / f"ts_code={ts_code}"
-    if stock_dir.exists():
+    
+    if not stock_dir.exists():
+        return
+    
+    # If no date range specified, delete all data for this stock
+    if not start_date and not end_date:
         shutil.rmtree(stock_dir)
-        print(f"Deleted existing indicators for {ts_code}")
+        print(f"Deleted all existing indicators for {ts_code}")
+        return
+    
+    # If date range specified, need to selectively delete
+    # Load existing data, filter out the date range, and resave
+    import pyarrow.parquet as pq
+    
+    all_data = []
+    for year_dir in stock_dir.iterdir():
+        if not year_dir.is_dir():
+            continue
+        for parquet_file in year_dir.glob("*.parquet"):
+            try:
+                df = pd.read_parquet(parquet_file)
+                all_data.append(df)
+            except Exception as e:
+                print(f"Error reading {parquet_file}: {e}")
+    
+    if not all_data:
+        return
+    
+    combined = pd.concat(all_data, ignore_index=True)
+    original_count = len(combined)
+    
+    # Filter out data in the specified date range
+    mask = pd.Series([True] * len(combined))
+    if start_date:
+        mask &= combined["trade_date"] < start_date
+    if end_date:
+        mask &= combined["trade_date"] > end_date
+    
+    remaining = combined[mask]
+    deleted_count = original_count - len(remaining)
+    
+    if deleted_count > 0:
+        # Delete all and resave remaining
+        shutil.rmtree(stock_dir)
+        if not remaining.empty:
+            save_indicators(remaining)
+        print(f"Deleted {deleted_count} rows of indicators for {ts_code} in date range")
+    else:
+        print(f"No existing indicators to delete for {ts_code} in date range")
 
 
 def save_indicators(df: pd.DataFrame) -> int:
@@ -199,8 +262,43 @@ def save_indicators(df: pd.DataFrame) -> int:
     return total_saved
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Calculate technical indicators for all stocks")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date: YYYYMMDD or YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date: YYYYMMDD or YYYY-MM-DD (default: today)")
+    return parser.parse_args()
+
+
+def normalize_date(date_str: str | None) -> str | None:
+    """Normalize date string to YYYYMMDD format."""
+    if not date_str:
+        return None
+    # Remove hyphens if present
+    return date_str.replace("-", "")
+
+
 def main() -> None:
     """Main function to calculate indicators for all stocks."""
+    args = parse_args()
+    start_date = normalize_date(args.start_date)
+    end_date = normalize_date(args.end_date)
+    
+    # Validate date range
+    if start_date and end_date:
+        if start_date > end_date:
+            raise SystemExit(
+                f"Error: start_date ({start_date}) cannot be after end_date ({end_date}). "
+                f"Please check your date arguments."
+            )
+    
+    # If no date range specified, calculate for all history
+    if start_date or end_date:
+        date_range_str = f" from {start_date or 'start'} to {end_date or 'end'}"
+        print(f"Calculating indicators{date_range_str}")
+    else:
+        print("Calculating indicators for all historical data")
+    
     total_start = time.perf_counter()
     stock_list = load_stock_list()
     if not stock_list:
@@ -211,11 +309,11 @@ def main() -> None:
     for idx, ts_code in enumerate(stock_list, start=1):
         stock_start = time.perf_counter()
         try:
-            # Delete existing indicators for this stock
-            delete_stock_indicators(ts_code)
+            # Delete existing indicators for this stock (in date range if specified)
+            delete_stock_indicators(ts_code, start_date, end_date)
 
-            # Load daily data
-            daily_df = load_daily_data(ts_code)
+            # Load daily data (filtered by date range if specified)
+            daily_df = load_daily_data(ts_code, start_date, end_date)
             if daily_df.empty:
                 print(f"[{idx}/{len(stock_list)}] {ts_code} skipped (no data)")
                 continue

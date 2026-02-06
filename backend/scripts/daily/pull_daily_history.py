@@ -56,6 +56,16 @@ def pull_adj_by_date(pro: ts.pro_api, trade_date: str) -> pd.DataFrame:
 def main() -> None:
     args = parse_args()
 
+    # 验证日期范围
+    if args.start_date and args.end_date:
+        start_normalized = normalize_date(args.start_date)
+        end_normalized = normalize_date(args.end_date)
+        if start_normalized > end_normalized:
+            raise SystemExit(
+                f"Error: start_date ({args.start_date}) cannot be after end_date ({args.end_date}). "
+                f"Please check your date arguments."
+            )
+
     end_date = normalize_date(args.end_date)
     if args.last_days and args.last_days > 0:
         end_dt = dt.datetime.strptime(end_date, "%Y%m%d")

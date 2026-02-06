@@ -189,6 +189,16 @@ def process_single_date(trade_date: str, stock_list: list[str] | None = None) ->
 def main() -> None:
     args = parse_args()
 
+    # 验证日期范围
+    if args.start_date and args.end_date:
+        start_normalized = normalize_date(args.start_date)
+        end_normalized = normalize_date(args.end_date)
+        if start_normalized > end_normalized:
+            raise SystemExit(
+                f"Error: start_date ({args.start_date}) cannot be after end_date ({args.end_date}). "
+                f"Please check your date arguments."
+            )
+
     # 如果提供了 --given-date，只处理单个日期
     if args.given_date:
         given_date = args.given_date
