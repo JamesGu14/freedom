@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 import time
@@ -19,26 +20,34 @@ DAILY_CMD = [
     "--last-days",
     "1",
 ]
-INDICATORS_CMD = [
+STK_FACTOR_CMD = [
     PYTHON,
-    str(SCRIPTS_ROOT / "one_time/calculate_indicators.py"),
+    str(SCRIPTS_ROOT / "daily/sync_stk_factor_pro.py"),
+    "--last-days",
+    "1",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 def run_cmd(cmd: list[str], label: str) -> None:
     start = time.perf_counter()
-    print(f"[scheduler] start {label}: {' '.join(cmd)}")
+    logger.info("[scheduler] start %s: %s", label, " ".join(cmd))
     subprocess.run(cmd, check=True)
     elapsed = time.perf_counter() - start
-    print(f"[scheduler] done  {label}: {elapsed:.2f}s")
+    logger.info("[scheduler] done  %s: %.2fs", label, elapsed)
 
 
 def run_daily_then_indicators() -> None:
     run_cmd(DAILY_CMD, "pull_daily_history")
-    run_cmd(INDICATORS_CMD, "calculate_indicators")
+    run_cmd(STK_FACTOR_CMD, "sync_stk_factor_pro")
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     tz = ZoneInfo("Asia/Shanghai")
     scheduler = BlockingScheduler(timezone=tz)
     scheduler.add_job(
@@ -50,7 +59,7 @@ def main() -> None:
         coalesce=True,
         max_instances=1,
     )
-    print("[scheduler] ready: daily@18:00 Asia/Shanghai -> indicators after daily")
+    logger.info("[scheduler] ready: daily@18:00 Asia/Shanghai -> stk_factor_pro after daily")
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

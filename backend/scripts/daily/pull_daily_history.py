@@ -3,18 +3,23 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import logging
 import time
 from pathlib import Path
 import sys
 
 import pandas as pd
 import tushare as ts
+from tqdm import tqdm
 
-SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings
-from app.data.duckdb_store import upsert_adj_factor, upsert_daily
+from app.data.duckdb_store import upsert_adj_factor, upsert_daily, upsert_daily_basic, upsert_daily_limit
+from app.data.mongo_trade_calendar import is_trading_day
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,8 +58,22 @@ def pull_adj_by_date(pro: ts.pro_api, trade_date: str) -> pd.DataFrame:
     return pro.adj_factor(trade_date=trade_date)
 
 
+def pull_daily_basic_by_date(pro: ts.pro_api, trade_date: str) -> pd.DataFrame:
+    return pro.daily_basic(trade_date=trade_date)
+
+
+def pull_stk_limit_by_date(pro: ts.pro_api, trade_date: str) -> pd.DataFrame:
+    return pro.stk_limit(trade_date=trade_date)
+
+
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     args = parse_args()
+    if not settings.tushare_token:
+        raise SystemExit("TUSHARE_TOKEN is required")
 
     # 验证日期范围
     if args.start_date and args.end_date:
@@ -76,20 +95,26 @@ def main() -> None:
     date_list = build_date_list(start_date, end_date)
 
     module_file = getattr(sys.modules[upsert_daily.__module__], "__file__", "unknown")
-    print(f"using upsert_daily from {module_file}")
+    logger.info("using upsert_daily from %s", module_file)
 
-    pro = ts.pro_api("e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e")
-    for idx, trade_date in enumerate(date_list, start=1):
+    pro = ts.pro_api(settings.tushare_token)
+    skipped_non_trading = 0
+    total_daily = 0
+    total_adj = 0
+    total_basic = 0
+    total_limit = 0
+
+    progress = tqdm(date_list, total=len(date_list), desc="pull_daily_history", unit="day", dynamic_ncols=True)
+    for idx, trade_date in enumerate(progress, start=1):
+        if not is_trading_day(trade_date, exchange="SSE"):
+            skipped_non_trading += 1
+            progress.set_postfix(date=trade_date, status="skip")
+            continue
         try:
             api_start = time.perf_counter()
             daily_df = pull_daily_by_date(pro, trade_date)
-            print(f"[{idx}/{len(date_list)}] {trade_date} daily_df.shape={daily_df.shape}")
             if daily_df.empty:
-                print(
-                    f"[{idx}/{len(date_list)}] {trade_date} daily_df columns="
-                    f"{list(daily_df.columns)}"
-                )
-                print(f"[{idx}/{len(date_list)}] {trade_date} no trading data")
+                progress.set_postfix(date=trade_date, status="no_data")
                 continue
             adj_df = pull_adj_by_date(pro, trade_date)
             api_elapsed = time.perf_counter() - api_start
@@ -98,24 +123,64 @@ def main() -> None:
             inserted_daily = upsert_daily(daily_df)
             write_daily_elapsed = time.perf_counter() - write_daily_start
             if inserted_daily != len(daily_df):
-                print(
-                    f"[{idx}/{len(date_list)}] {trade_date} daily count mismatch "
-                    f"df={len(daily_df)} inserted={inserted_daily}"
+                logger.warning(
+                    "[%s/%s] %s daily count mismatch df=%s inserted=%s",
+                    idx,
+                    len(date_list),
+                    trade_date,
+                    len(daily_df),
+                    inserted_daily,
                 )
 
             write_adj_start = time.perf_counter()
             inserted_adj = upsert_adj_factor(adj_df)
             write_adj_elapsed = time.perf_counter() - write_adj_start
-            print(
-                f"[{idx}/{len(date_list)}] {trade_date} "
-                f"daily={inserted_daily} adj_factor={inserted_adj} "
-                f"api={api_elapsed:.3f}s "
-                f"write_daily={write_daily_elapsed:.3f}s "
-                f"write_adj={write_adj_elapsed:.3f}s"
+
+            # daily_basic
+            api_basic_start = time.perf_counter()
+            basic_df = pull_daily_basic_by_date(pro, trade_date)
+            api_basic_elapsed = time.perf_counter() - api_basic_start
+            write_basic_start = time.perf_counter()
+            inserted_basic = upsert_daily_basic(basic_df)
+            write_basic_elapsed = time.perf_counter() - write_basic_start
+
+            # daily_limit (stk_limit)
+            api_limit_start = time.perf_counter()
+            limit_df = pull_stk_limit_by_date(pro, trade_date)
+            api_limit_elapsed = time.perf_counter() - api_limit_start
+            write_limit_start = time.perf_counter()
+            inserted_limit = upsert_daily_limit(limit_df)
+            write_limit_elapsed = time.perf_counter() - write_limit_start
+
+            total_daily += inserted_daily
+            total_adj += inserted_adj
+            total_basic += inserted_basic
+            total_limit += inserted_limit
+
+            total_api = api_elapsed + api_basic_elapsed + api_limit_elapsed
+            total_write = write_daily_elapsed + write_adj_elapsed + write_basic_elapsed + write_limit_elapsed
+            progress.set_postfix(
+                date=trade_date,
+                daily=inserted_daily,
+                adj=inserted_adj,
+                basic=inserted_basic,
+                limit=inserted_limit,
+                api=f"{total_api:.1f}s",
+                write=f"{total_write:.1f}s",
             )
         except Exception as exc:
-            print(f"[{idx}/{len(date_list)}] {trade_date} failed: {exc}")
+            logger.exception("[%s/%s] %s failed: %s", idx, len(date_list), trade_date, exc)
         time.sleep(args.sleep)
+
+    logger.info(
+        "pull_daily_history done: days=%s skipped_non_trading=%s daily=%s adj=%s basic=%s limit=%s",
+        len(date_list),
+        skipped_non_trading,
+        total_daily,
+        total_adj,
+        total_basic,
+        total_limit,
+    )
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@
 - date, open, high, low, close, volume
 - macd_dif, macd_dea
 - kdj_k, kdj_d
-- rsi
+- rsi12
 
 ## 主要参数（默认值）
 - ma_window = 20

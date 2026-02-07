@@ -26,11 +26,13 @@ const getChangeClass = (value) => {
   return "change-flat";
 };
 
-const getThreeDayChanges = (row) => {
+const getFiveDayChanges = (row) => {
   const items = [
     { value: row.pct_chg_1, date: row.pct_chg_1_date },
     { value: row.pct_chg_2, date: row.pct_chg_2_date },
     { value: row.pct_chg_3, date: row.pct_chg_3_date },
+    { value: row.pct_chg_4, date: row.pct_chg_4_date },
+    { value: row.pct_chg_5, date: row.pct_chg_5_date },
   ];
 
   return items
@@ -177,8 +179,8 @@ export default function SectorDetail() {
               <tr>
                 <th>股票代码</th>
                 <th>股票名称</th>
-                <th className="th-numeric">近三日分别涨跌</th>
-                <th className="th-numeric">近三日涨跌</th>
+                <th className="th-numeric">近五日分别涨跌</th>
+                <th className="th-numeric">近五日涨跌</th>
                 <th>纳入日期</th>
                 <th>剔除日期</th>
                 <th>状态</th>
@@ -191,7 +193,7 @@ export default function SectorDetail() {
                   <td className="code-cell">{item.ts_code}</td>
                   <td className="name-cell">{item.name || "-"}</td>
                   <td className="pct-three-days">
-                    {getThreeDayChanges(item).map((entry, index) => (
+                    {getFiveDayChanges(item).map((entry, index) => (
                       <span
                         key={`${item.ts_code}-pct-${index}`}
                         className={`change-pill change-pill-sm ${getChangeClass(
@@ -204,8 +206,8 @@ export default function SectorDetail() {
                     ))}
                   </td>
                   <td className="th-numeric">
-                    <span className={`change-pill ${getChangeClass(item.pct_chg_3d)}`}>
-                      {formatPct(item.pct_chg_3d)}
+                    <span className={`change-pill ${getChangeClass(item.pct_chg_5d)}`}>
+                      {formatPct(item.pct_chg_5d)}
                     </span>
                   </td>
                   <td>{formatDate(item.in_date)}</td>

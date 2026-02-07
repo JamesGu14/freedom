@@ -7,7 +7,10 @@ import { AuthProvider, useAuth } from "../lib/auth";
 
 function AppShell({ Component, pageProps }) {
   const router = useRouter();
-  const { token, initialized, logout } = useAuth();
+  const { token, username, initialized, logout } = useAuth();
+  const canManageUsers = ["admin", "james"].includes(
+    String(username || "").trim().toLowerCase()
+  );
 
   useEffect(() => {
     if (!initialized) return;
@@ -46,12 +49,17 @@ function AppShell({ Component, pageProps }) {
             <Link href="/daily-signals" className="nav-link">
               Daily Signals
             </Link>
+            <Link href="/market-index" className="nav-link">
+              大盘指数
+            </Link>
             <Link href="/watchlist" className="nav-link">
               自选
             </Link>
-            <Link href="/users" className="nav-link">
-              用户管理
-            </Link>
+            {canManageUsers ? (
+              <Link href="/users" className="nav-link">
+                用户管理
+              </Link>
+            ) : null}
           </div>
           <div className="nav-actions">
             {token ? (

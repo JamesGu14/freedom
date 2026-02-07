@@ -22,80 +22,6 @@ def get_connection(*, read_only: bool = False, retries: int = 3, delay: float = 
             raise
 
 
-def replace_stock_basic(df: pd.DataFrame) -> int:
-    if df.empty:
-        return 0
-
-    with get_connection(read_only=False) as con:
-        con.register("df", df)
-        con.execute("CREATE OR REPLACE TABLE stock_basic AS SELECT * FROM df")
-        return df.shape[0]
-
-
-def list_stock_basic(
-    *,
-    page: int = 1,
-    page_size: int = 10,
-    name: str | None = None,
-    ts_code: str | None = None,
-    industry: str | None = None,
-) -> tuple[list[dict[str, object]], int]:
-    where_clauses: list[str] = []
-    params: list[object] = []
-
-    if name:
-        where_clauses.append("name ILIKE ?")
-        params.append(f"%{name}%")
-    if ts_code:
-        where_clauses.append("ts_code ILIKE ?")
-        params.append(f"%{ts_code}%")
-    if industry:
-        where_clauses.append("industry = ?")
-        params.append(industry)
-
-    where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-    offset = max(page - 1, 0) * page_size
-
-    query = (
-        "SELECT ts_code, symbol, name, area, industry, market, list_date "
-        "FROM stock_basic"
-        f"{where_sql} "
-        "ORDER BY ts_code "
-        "LIMIT ? OFFSET ?"
-    )
-    count_query = f"SELECT COUNT(*) FROM stock_basic{where_sql}"
-    with get_connection(read_only=True) as con:
-        try:
-            total = con.execute(count_query, params).fetchone()[0]
-            rows = con.execute(query, params + [page_size, offset]).fetchdf()
-        except duckdb.CatalogException:
-            return [], 0
-    return rows.to_dict(orient="records"), int(total)
-
-
-def load_stock_basic_df() -> pd.DataFrame:
-    query = "SELECT ts_code, symbol, name, area, industry, market, list_date FROM stock_basic"
-    with get_connection(read_only=True) as con:
-        try:
-            return con.execute(query).fetchdf()
-        except duckdb.CatalogException:
-            return pd.DataFrame()
-
-
-def list_industries() -> list[str]:
-    query = (
-        "SELECT DISTINCT industry FROM stock_basic "
-        "WHERE industry IS NOT NULL AND industry <> '' "
-        "ORDER BY industry"
-    )
-    with get_connection(read_only=True) as con:
-        try:
-            rows = con.execute(query).fetchall()
-        except (duckdb.CatalogException, duckdb.IOException):
-            return []
-    return [row[0] for row in rows]
-
-
 def upsert_daily(df: pd.DataFrame) -> int:
     if df.empty:
         return 0
@@ -287,7 +213,8 @@ def list_indicators(ts_code: str) -> list[dict[str, object]]:
 
     part_glob = str(indicators_root / "year=*/part-*.parquet")
     query = (
-        "SELECT * FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
+        "SELECT * FROM read_parquet(?, union_by_name = true) "
+        "WHERE ts_code = ? ORDER BY trade_date"
     )
     with get_connection(read_only=True) as con:
         try:
@@ -372,9 +299,13 @@ def list_last_n_days_pct_chg(
                MAX(CASE WHEN rn = 1 THEN pct_chg END) AS pct_chg_1,
                MAX(CASE WHEN rn = 2 THEN pct_chg END) AS pct_chg_2,
                MAX(CASE WHEN rn = 3 THEN pct_chg END) AS pct_chg_3,
+               MAX(CASE WHEN rn = 4 THEN pct_chg END) AS pct_chg_4,
+               MAX(CASE WHEN rn = 5 THEN pct_chg END) AS pct_chg_5,
                MAX(CASE WHEN rn = 1 THEN trade_date END) AS trade_date_1,
                MAX(CASE WHEN rn = 2 THEN trade_date END) AS trade_date_2,
                MAX(CASE WHEN rn = 3 THEN trade_date END) AS trade_date_3,
+               MAX(CASE WHEN rn = 4 THEN trade_date END) AS trade_date_4,
+               MAX(CASE WHEN rn = 5 THEN trade_date END) AS trade_date_5,
                SUM(pct_chg) AS pct_chg_nd
         FROM (
             SELECT ts_code,
@@ -401,13 +332,17 @@ def list_last_n_days_pct_chg(
         ts_code = row.pop("ts_code", None)
         if ts_code:
             result[ts_code] = {
-                "pct_chg_3d": row.get("pct_chg_nd"),
+                "pct_chg_nd": row.get("pct_chg_nd"),
                 "pct_chg_1": row.get("pct_chg_1"),
                 "pct_chg_2": row.get("pct_chg_2"),
                 "pct_chg_3": row.get("pct_chg_3"),
+                "pct_chg_4": row.get("pct_chg_4"),
+                "pct_chg_5": row.get("pct_chg_5"),
                 "pct_chg_1_date": row.get("trade_date_1"),
                 "pct_chg_2_date": row.get("trade_date_2"),
                 "pct_chg_3_date": row.get("trade_date_3"),
+                "pct_chg_4_date": row.get("trade_date_4"),
+                "pct_chg_5_date": row.get("trade_date_5"),
             }
     return result
 
@@ -486,16 +421,3 @@ def get_next_trade_date(ts_codes: list[str], trade_date: str) -> str | None:
     return row[0] or None
 
 
-def get_stock_basic_by_code(ts_code: str) -> dict[str, object] | None:
-    query = (
-        "SELECT ts_code, name, industry, market "
-        "FROM stock_basic WHERE ts_code = ? LIMIT 1"
-    )
-    with get_connection() as con:
-        try:
-            row = con.execute(query, [ts_code]).fetchone()
-        except duckdb.CatalogException:
-            return None
-    if not row:
-        return None
-    return {"ts_code": row[0], "name": row[1], "industry": row[2], "market": row[3]}

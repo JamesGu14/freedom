@@ -174,18 +174,23 @@ python backend/scripts/daily/pull_daily_history.py --last-days 7
 python backend/scripts/daily/pull_daily_history.py --start-date 20240101 --end-date 20240131
 ```
 
-### Calculate Technical Indicators
+### Sync Stock Technical Factors
 
 ```bash
-python backend/scripts/one_time/calculate_indicators.py
+# Pull latest trading day factors
+python backend/scripts/daily/sync_stk_factor_pro.py --last-days 1
+
+# Pull specific date range
+python backend/scripts/daily/sync_stk_factor_pro.py --start-date 20240101 --end-date 20240131
 ```
 
-**Indicators calculated:**
-- Moving Averages: MA5, MA10, MA20, MA30, MA60, MA120, MA200, MA250, MA500
+**Primary fields written:**
+- Moving Averages: MA5, MA10, MA20, MA30, MA60, MA90, MA250
 - MACD: macd, macd_signal, macd_hist
-- RSI(14)
+- RSI: rsi6, rsi12, rsi24
 - KDJ(9): kdj_k, kdj_d, kdj_j
 - Bollinger Bands(20): boll_upper, boll_middle, boll_lower
+- Extra factors: atr, cci, wr, wr1, updays, downdays, pe, pe_ttm, pb, turnover_rate, turnover_rate_f, volume_ratio
 
 ### Calculate Trading Signals
 

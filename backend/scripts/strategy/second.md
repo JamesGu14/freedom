@@ -11,7 +11,7 @@
 - open, high, low, close
 - volume
 - macd_dif, macd_dea
-- rsi
+- rsi12
 
 ## 默认参数
 
@@ -55,7 +55,7 @@
 ### 4) 动能确认（满足 ≥1）
 
 - MACD 金叉翻正：dif > dea 且 dif.shift(1) <= dea.shift(1) 且 (dif-dea) > 0
-- RSI 上穿 50：rsi > 50 且 rsi.shift(1) <= 50
+- RSI12 上穿 50：rsi12 > 50 且 rsi12.shift(1) <= 50
 - 均线多头：MA5 > MA10 > MA20 且 MA20 斜率 > 0
 
 ### 5) BUY 信号

@@ -8,6 +8,7 @@ mkdir -p "${LOG_DIR}"
 # Parse command line arguments
 START_DATE=""
 END_DATE=""
+HAS_DATE_ARGS="0"
 
 usage() {
     echo "Usage: $0 [--start-date YYYYMMDD] [--end-date YYYYMMDD]"
@@ -28,10 +29,12 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --start-date)
             START_DATE="$2"
+            HAS_DATE_ARGS="1"
             shift 2
             ;;
         --end-date)
             END_DATE="$2"
+            HAS_DATE_ARGS="1"
             shift 2
             ;;
         --help|-h)
@@ -77,30 +80,36 @@ run_task() {
   echo "[INFO] $(date '+%F %T') end ${task_name}" | tee -a "${LOG_FILE}"
 }
 
-# Check trade calendar (SSE). Skip if not trading day.
-echo "[INFO] $(date '+%F %T') start check_trade_calendar" | tee -a "${LOG_FILE}"
+# 当用户未显式指定日期时（默认“今天”模式），非交易日直接跳过。
+# 当用户显式传入日期区间时，不在此处提前退出，由各任务按交易日自行处理。
+if [[ "${HAS_DATE_ARGS}" == "0" ]]; then
+  echo "[INFO] $(date '+%F %T') start check_trade_calendar" | tee -a "${LOG_FILE}"
 IS_OPEN="$(python - <<'PY'
 import datetime as dt
+import sys
 from app.data.mongo_trade_calendar import is_trading_day
 
 today = dt.datetime.now().strftime("%Y%m%d")
-print("1" if is_trading_day(today, exchange="SSE") else "0")
+sys.stdout.write("1" if is_trading_day(today, exchange="SSE") else "0")
 PY
 )"
-echo "[INFO] $(date '+%F %T') end check_trade_calendar" | tee -a "${LOG_FILE}"
+  echo "[INFO] $(date '+%F %T') end check_trade_calendar" | tee -a "${LOG_FILE}"
 
-if [[ "${IS_OPEN}" != "1" ]]; then
-  echo "[INFO] ${TODAY} is not a trading day, skip." | tee -a "${LOG_FILE}"
-  exit 0
+  if [[ "${IS_OPEN}" != "1" ]]; then
+    echo "[INFO] ${TODAY} is not a trading day, skip." | tee -a "${LOG_FILE}"
+    exit 0
+  fi
+
+  echo "[INFO] ${TODAY} is trading day, running tasks..." | tee -a "${LOG_FILE}"
+else
+  echo "[INFO] date range provided, skip global today-trading-day guard" | tee -a "${LOG_FILE}"
 fi
-
-echo "[INFO] ${TODAY} is trading day, running tasks..." | tee -a "${LOG_FILE}"
 
 # 1) Pull daily market data (K-line)
 run_task "拉取每日个股日线" "python backend/scripts/daily/pull_daily_history.py --start-date ${START_DATE} --end-date ${END_DATE}"
 
-# 2) Calculate indicators for the date range
-run_task "计算每日指标" "python backend/scripts/one_time/calculate_indicators.py --start-date ${START_DATE} --end-date ${END_DATE}"
+# 2) Sync technical factors for the date range
+run_task "同步每日技术因子" "python backend/scripts/daily/sync_stk_factor_pro.py --start-date ${START_DATE} --end-date ${END_DATE}"
 
 # 3) Calculate daily signals for the date range
 run_task "计算每日信号" "cd /home/james/projects/freedom/backend && python -m scripts.daily.calculate_signal --start-date ${START_DATE} --end-date ${END_DATE}"
@@ -111,8 +120,7 @@ run_task "计算每日信号" "cd /home/james/projects/freedom/backend && python
 # 5) Sync Shenwan daily index for the date range
 run_task "同步申万行业日线" "python backend/scripts/daily/sync_shenwan_daily.py --start-date ${START_DATE} --end-date ${END_DATE}"
 
-# Optional compaction (enable if needed)
-# python backend/scripts/daily/compact_daily_parquet.py | tee -a "${LOG_FILE}"
-# python backend/scripts/daily/compact_daily_basic_parquet.py | tee -a "${LOG_FILE}"
+# 6) Compact fragmented parquet files
+run_task "压缩Parquet文件" "python backend/scripts/daily/compact_parquet.py --dataset all"
 
 echo "[INFO] $(date '+%F %T') done" | tee -a "${LOG_FILE}"

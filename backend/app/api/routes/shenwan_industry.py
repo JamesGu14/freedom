@@ -117,7 +117,7 @@ def get_sector_members(
         code = item.get("ts_code")
         if code:
             entry = pct_map.get(code, {})
-            item["pct_chg_3d"] = entry.get("pct_chg_3d")
+            item["pct_chg_3d"] = entry.get("pct_chg_nd")
             item["pct_chg_1"] = entry.get("pct_chg_1")
             item["pct_chg_2"] = entry.get("pct_chg_2")
             item["pct_chg_3"] = entry.get("pct_chg_3")
@@ -164,21 +164,29 @@ def get_sector_detail(
     )
 
     ts_codes = [item.get("ts_code") for item in members if item.get("ts_code")]
-    pct_map = get_last_n_days_pct_chg(ts_codes, n=3) if ts_codes else {}
+    pct_map = get_last_n_days_pct_chg(ts_codes, n=5) if ts_codes else {}
     for item in members:
         code = item.get("ts_code")
         if code:
             entry = pct_map.get(code, {})
-            item["pct_chg_3d"] = entry.get("pct_chg_3d")
+            item["pct_chg_5d"] = entry.get("pct_chg_nd")
             item["pct_chg_1"] = entry.get("pct_chg_1")
             item["pct_chg_2"] = entry.get("pct_chg_2")
             item["pct_chg_3"] = entry.get("pct_chg_3")
+            item["pct_chg_4"] = entry.get("pct_chg_4")
+            item["pct_chg_5"] = entry.get("pct_chg_5")
             item["pct_chg_1_date"] = entry.get("pct_chg_1_date")
             item["pct_chg_2_date"] = entry.get("pct_chg_2_date")
             item["pct_chg_3_date"] = entry.get("pct_chg_3_date")
+            item["pct_chg_4_date"] = entry.get("pct_chg_4_date")
+            item["pct_chg_5_date"] = entry.get("pct_chg_5_date")
         else:
-            item["pct_chg_3d"] = item["pct_chg_1"] = item["pct_chg_2"] = item["pct_chg_3"] = None
-            item["pct_chg_1_date"] = item["pct_chg_2_date"] = item["pct_chg_3_date"] = None
+            item["pct_chg_5d"] = (
+                item["pct_chg_1"]
+            ) = item["pct_chg_2"] = item["pct_chg_3"] = item["pct_chg_4"] = item["pct_chg_5"] = None
+            item["pct_chg_1_date"] = (
+                item["pct_chg_2_date"]
+            ) = item["pct_chg_3_date"] = item["pct_chg_4_date"] = item["pct_chg_5_date"] = None
 
     breadcrumbs: list[dict[str, object]] = []
     level1_code = industry.get("level1_code")

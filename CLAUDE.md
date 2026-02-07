@@ -48,8 +48,9 @@ python backend/scripts/daily/pull_daily_history.py
 python backend/scripts/daily/pull_daily_history.py --last-days 7
 python backend/scripts/daily/pull_daily_history.py --start-date 20240101 --end-date 20240131
 
-# Calculate technical indicators
-python backend/scripts/one_time/calculate_indicators.py
+# Sync stock technical factors (stk_factor_pro)
+python backend/scripts/daily/sync_stk_factor_pro.py --last-days 1
+python backend/scripts/daily/sync_stk_factor_pro.py --start-date 20240101 --end-date 20240131
 
 # Calculate trading signals
 python backend/scripts/daily/calculate_signal.py --given-date 20250126
@@ -96,7 +97,7 @@ backend/
 ├── scripts/
 │   ├── scheduler.py         # APScheduler setup
 │   ├── daily/               # Daily jobs (pull_daily_history, calculate_signal)
-│   ├── one_time/            # Indicator calculation
+│   ├── one_time/            # One-time maintenance tasks
 │   └── strategy/            # Signal strategies (MaCross, EarlyBreakout, DailySignal)
 
 frontend/

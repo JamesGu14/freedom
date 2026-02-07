@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 
@@ -9,6 +10,8 @@ sys.path.append(str(SCRIPT_ROOT))
 
 from scripts.strategy.base_strategy import BaseStrategy  # noqa: E402
 
+logger = logging.getLogger(__name__)
+
 REQUIRED_COLUMNS = {
     "date",
     "open",
@@ -18,7 +21,7 @@ REQUIRED_COLUMNS = {
     "volume",
     "macd_dif",
     "macd_dea",
-    "rsi",
+    "rsi12",
 }
 
 
@@ -96,7 +99,7 @@ class EarlyBreakoutSignalModel(BaseStrategy):
         volume = df["volume"]
         dif = df["macd_dif"]
         dea = df["macd_dea"]
-        rsi = df["rsi"]
+        rsi = df["rsi12"]
 
         df["ma_fast"] = close.rolling(p["ma_fast"]).mean()
         df["ma_mid"] = close.rolling(p["ma_mid"]).mean()
@@ -156,7 +159,7 @@ class EarlyBreakoutSignalModel(BaseStrategy):
 
         df["extreme_move"] = close.pct_change().abs() >= p["extreme_move_pct"]
 
-        invalid_mask = df[["open", "high", "low", "close", "volume", "macd_dif", "macd_dea", "rsi"]].isna().any(axis=1)
+        invalid_mask = df[["open", "high", "low", "close", "volume", "macd_dif", "macd_dea", "rsi12"]].isna().any(axis=1)
         df["invalid"] = invalid_mask
 
         signal_final = []
@@ -212,7 +215,7 @@ class EarlyBreakoutSignalModel(BaseStrategy):
         if date not in self.df.index:
             raise KeyError(f"{self.stock_code}: date not found {date}")
         row = self.df.loc[date]
-        if row[["open", "high", "low", "close", "volume", "macd_dif", "macd_dea", "rsi"]].isna().any():
+        if row[["open", "high", "low", "close", "volume", "macd_dif", "macd_dea", "rsi12"]].isna().any():
             return "HOLD"
         signal = row.get("signal")
         if pd.isna(signal):
@@ -220,7 +223,7 @@ class EarlyBreakoutSignalModel(BaseStrategy):
         return str(signal)
 
 
-def _make_df(date, open_, high, low, close, volume, macd_dif, macd_dea, rsi):
+def _make_df(date, open_, high, low, close, volume, macd_dif, macd_dea, rsi12):
     return pd.DataFrame(
         {
             "date": date,
@@ -231,21 +234,25 @@ def _make_df(date, open_, high, low, close, volume, macd_dif, macd_dea, rsi):
             "volume": volume,
             "macd_dif": macd_dif,
             "macd_dea": macd_dea,
-            "rsi": rsi,
+            "rsi12": rsi12,
         }
     )
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     if len(sys.argv) != 3:
-        print("Usage: python second.py <stock_code> <date>")
+        logger.error("Usage: python second.py <stock_code> <date>")
         raise SystemExit(1)
 
     stock_code = sys.argv[1]
     select_date = sys.argv[2]
 
     model = EarlyBreakoutSignalModel(stock_code, df=None)
-    print(model.predict_date(select_date))
+    logger.info("%s", model.predict_date(select_date))
 
 
 def test_breakout_buy():

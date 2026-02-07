@@ -9,23 +9,23 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import logging
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from functools import lru_cache
 from pathlib import Path
 
-import pandas as pd
+from tqdm import tqdm
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
-from app.core.config import settings
 from app.data.mongo import get_collection
 from app.data.mongo_stock import list_stock_codes
-from scripts.strategy.first import MaCrossSignalModel
+from app.data.mongo_trade_calendar import is_trading_day
 from scripts.strategy.second import EarlyBreakoutSignalModel
 from scripts.strategy.third import DailySignalModel
 
+logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -52,21 +52,21 @@ def normalize_date(value: str) -> str:
 
 def get_trading_days(start_date: str, end_date: str) -> list[str]:
     """Get all trading days in date range."""
-    import tushare as ts
-    
-    if not settings.tushare_token:
-        raise SystemExit("TUSHARE_TOKEN is required")
-    
-    pro = ts.pro_api(settings.tushare_token)
     start = normalize_date(start_date)
     end = normalize_date(end_date)
-    
-    df = pro.trade_cal(exchange="SSE", start_date=start, end_date=end, fields="cal_date,is_open")
-    if df is None or df.empty:
-        return []
-    
-    trading_days = df[df["is_open"] == 1]["cal_date"].tolist()
-    return [str(d) for d in trading_days]
+    start_dt = dt.datetime.strptime(start, "%Y%m%d")
+    end_dt = dt.datetime.strptime(end, "%Y%m%d")
+    if start_dt > end_dt:
+        raise ValueError("start_date cannot be after end_date")
+
+    dates: list[str] = []
+    current = start_dt
+    while current <= end_dt:
+        date_str = current.strftime("%Y%m%d")
+        if is_trading_day(date_str, exchange="SSE"):
+            dates.append(date_str)
+        current += dt.timedelta(days=1)
+    return dates
 
 
 class StrategyCache:
@@ -170,20 +170,26 @@ def process_single_date_optimized(
                 batch_docs = future.result()
                 docs.extend(batch_docs)
                 completed += 1
-                print(f"[{completed}/{len(batches)}] Batch {batch_id} completed, docs so far: {len(docs)}")
+                logger.debug(
+                    "[%s/%s] Batch %s completed, docs so far=%s",
+                    completed,
+                    len(batches),
+                    batch_id,
+                    len(docs),
+                )
             except Exception as exc:
-                print(f"Batch {batch_id} failed: {exc}")
+                logger.exception("Batch %s failed: %s", batch_id, exc)
     
     # Insert into MongoDB
     collection = get_collection("daily_signal")
     delete_result = collection.delete_many({"trading_date": trade_date})
     if delete_result.deleted_count > 0:
-        print(f"deleted existing {delete_result.deleted_count} signals for {trade_date}")
+        logger.info("deleted existing %s signals for %s", delete_result.deleted_count, trade_date)
     
     if docs:
         collection.insert_many(docs)
     
-    print(f"done trade_date={trade_date} buy_signals={len(docs)}")
+    logger.info("done trade_date=%s buy_signals=%s", trade_date, len(docs))
     return len(docs)
 
 
@@ -198,24 +204,32 @@ def process_date_range_parallel(
     if not stock_list:
         raise SystemExit("No stock_basic data available")
     
-    print(f"Loaded {len(stock_list)} stocks")
+    logger.info("Loaded %s stocks", len(stock_list))
     
     trading_days = get_trading_days(start_date, end_date)
-    print(f"Found {len(trading_days)} trading days")
-    
-    for idx, trade_date in enumerate(trading_days, start=1):
-        print(f"\n[{idx}/{len(trading_days)}] Processing {trade_date}...")
+    logger.info("Found %s trading days", len(trading_days))
+
+    progress = tqdm(trading_days, total=len(trading_days), desc="calculate_signal_optimized", unit="day", dynamic_ncols=True)
+    for trade_date in progress:
+        progress.set_postfix(date=trade_date)
         process_single_date_optimized(trade_date, stock_list, workers, batch_size)
-    
-    print(f"\nAll done! Processed {len(trading_days)} trading days.")
+
+    logger.info("All done! Processed %s trading days.", len(trading_days))
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     args = parse_args()
     
     if args.given_date:
         # Single date mode
         trade_date = normalize_date(args.given_date)
+        if not is_trading_day(trade_date, exchange="SSE"):
+            logger.info("%s is not a trading day, skipping...", trade_date)
+            return
         stock_list = list_stock_codes()
         if not stock_list:
             raise SystemExit("No stock_basic data available")
@@ -231,7 +245,7 @@ def main() -> None:
         elif args.start_date:
             start_date = args.start_date
             end_date = dt.datetime.now().strftime("%Y%m%d")
-            print(f"--end-date not provided, using today: {end_date}")
+            logger.info("--end-date not provided, using today: %s", end_date)
         elif args.end_date:
             start_date = "2020-01-01"
             end_date = args.end_date
