@@ -1,154 +1,544 @@
-# 股票量化分析与回测工具需求说明
+# Quant Platform（自用量化策略平台）
 
-面向日级别 A 股数据的量化研究工具，提供数据拉取、指标计算、策略加载、交易信号生成及回测能力。设计目标：可扩展、可维护、方便集成多种策略与数据源。
+面向自用的 A 股天级别量化研究与回测平台：每日盘后自动拉取 TuShare 数据 → 生成特征/指标 → 策略发信号 → 单股回测 → 前端可视化（K 线 + 指标 + 交易点 + 回测报告）。
 
-## 1. 系统架构
+---
 
-* **数据层**：统一的数据接口，支持多数据源（券商/第三方行情 API、本地 CSV/Parquet）。数据标准化后存储到本地数据库或文件（推荐 Parquet + DuckDB/SQLite）。
-* **计算层**：指标计算与特征工程。针对日线数据计算价格类、成交类和技术指标（MACD、KDJ 等），支持增量计算与缓存。
-* **策略层**：策略插件化加载。每个策略暴露 `prepare`（预处理）、`generate_signals`（信号生成）、`on_backtest_end`（可选）接口。
-* **执行层**：信号查询、单只股票回测和绩效分析。支持指定日期+股票的信号获取，以及单标的日级回测。
-* **接口层**：CLI/HTTP 服务（可选）统一入口，提供数据刷新、指标重算、策略回测等命令。
+## 1. 目标与范围
 
-## 2. 数据需求
+### 1.1 目标（MVP）
 
-### 2.1 拉取范围
+- **数据闭环**：每日盘后拉取全市场股票日线行情 + daily_basic + 基础信息，行情与指标落地到 **Parquet**，stock_basic 写入 **MongoDB**，并可用 **DuckDB** 高效查询。
+- **指标闭环**：计算一组常用技术指标与衍生特征，存入 Feature Store（DuckDB 表/视图）。
+- **策略闭环**：策略管理（CRUD + 版本化），支持按 `strategy + date + symbol` 返回 `BUY/SELL/HOLD`。
+- **回测闭环**：支持**单只股票**天级回测（默认 T 日收盘产生信号，T+1 开盘成交），输出关键绩效指标与交易明细。
+- **前端展示**：股票列表、个股 K 线页（叠加指标/信号/交易点）、策略管理页、回测报告页。
 
-* **标的**：全部 A 股（含主板/科创板/创业板/北交所）。需要基本信息（代码、名称、上市/停牌状态、行业）与日线行情。
-* **频率**：每日收盘后执行拉取任务（可用定时器/cron）。
+### 1.2 非目标（后续迭代）
 
-### 2.2 行情字段（最小集合）
+- 实盘交易（券商接入）、分钟级数据、组合回测/多标的回测、参数寻优、Walk-forward、因子库/横截面选股等。
 
-| 字段 | 说明 |
-| --- | --- |
-| trade_date | 交易日期（yyyy-MM-dd） |
-| ts_code / symbol | 交易代码，统一编码 |
-| open / high / low / close | 当日开高低收 |
-| pre_close | 前收 |
-| pct_chg | 涨跌幅（%） |
-| vol | 成交量（手或股，需注明单位） |
-| amount | 成交额（元） |
-| turnover_rate（可选） | 换手率 |
+---
 
-### 2.3 技术指标
+## 2. 技术栈与组件
 
-如 API 不直接提供，则在计算层生成：
+- **数据源**：TuShare（A 股）
+- **存储/查询**：Parquet（原始与特征落地） + DuckDB（本地分析/查询引擎）
+- **后端**：Python + FastAPI
+- **定时任务**：APScheduler（盘后拉取、增量更新、指标计算）
+- **缓存（可选）**：Redis（热点 K 线/指标、回测结果缓存、任务状态）
+- **前端**：Next.js + ECharts
+- **可观测性（建议）**：结构化日志 + 基础指标（后续可接 Prometheus/Grafana）
 
-* **MACD**：DIF、DEA、MACD（12, 26, 9 默认）。
-* **KDJ**：K、D、J（默认 9, 3, 3）。
-* **MA/EMA**：常用 5/10/20/30/60。
-* **ATR**（可选）：波动率度量。
-* **RSI**（可选）：强弱指标。
+---
 
-要求：指标计算应可配置参数、可扩展（新增指标只需实现统一接口），支持按日期增量更新，避免全量重算。
+## 2.1 MongoDB 集合
 
-### 2.4 数据存储与一致性
+**stock_basic**（实际字段）
 
-* 数据表/文件分区：按市场或年份分区，字段包含主键（ts_code, trade_date）。
-* 校验：拉取后执行数据完整性检查（交易日缺失、停牌日过滤、量价为 0 的异常行等）。
-* 版本化（可选）：保留原始行情与修正/前复权行情，记录数据源与拉取时间。
+- 来源：TuShare `stock_basic`
+- 用途：股票基本信息、列表页检索与行业筛选
+- 关键字段（实际表可能包含更多 TuShare 字段）：
+  - `ts_code` (VARCHAR)
+  - `symbol` (VARCHAR)
+  - `name` (VARCHAR)
+  - `area` (VARCHAR)
+  - `industry` (VARCHAR)
+  - `market` (VARCHAR)
+  - `list_date` (VARCHAR, YYYYMMDD)
 
-## 3. 策略框架
+## 2.2 DuckDB 数据库结构（含 Parquet 分区）
 
-### 3.1 策略接口
+DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/索引表存储，并通过 `read_parquet()` 直接查询分区 Parquet 数据。
 
-策略作为模块化插件，约定统一接口：
+### 2.2.1 DuckDB 表（实际库内）
 
-```python
-class Strategy:
-    name: str
-    params: dict
+**adj_factor**（实际字段）
 
-    def prepare(self, data_api):  # 可选
-        """执行策略所需的缓存/预处理（如加载行业、财报因子）。"""
+- 来源：TuShare `adj_factor`
+- 用途：复权因子查询
+- 字段：
+  - `ts_code` (VARCHAR)
+  - `trade_date` (VARCHAR, YYYYMMDD)
+  - `adj_factor` (DOUBLE)
 
-    def generate_signals(self, df):  # 必需
-        """
-        输入：单只股票的日线 DataFrame（含指标）。
-        输出：DataFrame/Series，index 为 trade_date，值为 {buy, sell, hold} 或数值信号。
-        """
+### 2.2.2 DuckDB 视图
 
-    def on_backtest_end(self, report):  # 可选
-        """回测结束时的收尾动作（记录日志、导出图表等）。"""
+- 当前库内 **无业务视图**。仅存在 DuckDB/SQLite 的系统视图（如 `duckdb_tables`, `sqlite_master` 等），未在本项目中使用。
+
+### 2.2.3 Parquet 分区数据集（DuckDB 通过 read_parquet 查询）
+
+**daily**（原始日线行情）
+
+- 路径：`data/raw/daily/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（来自 TuShare `daily`）：
+  - `ts_code`, `trade_date` (str, YYYYMMDD)
+  - `open`, `high`, `low`, `close`
+  - `pre_close`, `change`, `pct_chg`
+  - `vol`, `amount`
+
+**daily_basic**（估值/换手/市值）
+
+- 路径：`data/raw/daily_basic/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（来自 TuShare `daily_basic`）：
+  - `ts_code`, `trade_date` (str, YYYYMMDD)
+  - `close`
+  - `turnover_rate`, `turnover_rate_f`, `volume_ratio`
+  - `pe`, `pe_ttm`, `pb`, `ps`, `ps_ttm`
+  - `dv_ratio`, `dv_ttm`
+  - `total_share`, `float_share`, `free_share`
+  - `total_mv`, `circ_mv`
+
+**daily_limit**（涨跌停）
+
+- 路径：`data/raw/daily_limit/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（来自 TuShare `stk_limit`）：
+  - `trade_date` (str, YYYYMMDD)
+  - `ts_code`
+  - `pre_close`, `up_limit`, `down_limit`
+
+**indicators**（技术指标特征）
+
+- 路径：`data/features/indicators/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
+- 字段（由 `scripts/daily/sync_stk_factor_pro.py` 同步）：
+  - `ts_code`, `trade_date` (str, YYYYMMDD)
+  - `close_qfq`
+  - `ma5`, `ma10`, `ma20`, `ma30`, `ma60`, `ma90`, `ma250`
+  - `macd`, `macd_signal`, `macd_hist`
+  - `rsi6`, `rsi12`, `rsi24`
+  - `kdj_k`, `kdj_d`, `kdj_j`
+  - `boll_upper`, `boll_middle`, `boll_lower`
+  - `atr`, `cci`, `wr`, `wr1`, `updays`, `downdays`
+  - `pe`, `pe_ttm`, `pb`, `turnover_rate`, `turnover_rate_f`, `volume_ratio`
+
+---
+
+## 3. 总体架构
+
+```mermaid
+flowchart LR
+  A[TuShare API] --> B[APScheduler Jobs<br/>pull + update]
+  B --> C[Raw Parquet Store<br/>partitioned by ts_code/year]
+  C --> D[Feature Pipeline<br/>indicators/factors]
+  D --> E[(DuckDB Feature Store)]
+
+  subgraph Backend[FastAPI Backend]
+    F1[Market Data API<br/>candles/features]
+    F2[Strategy Service<br/>CRUD + versioning]
+    F3[Signal API<br/>strategy+date+symbol]
+    F4[Backtest Service<br/>single-symbol]
+    F5[(Meta Store<br/>DuckDB tables)]
+  end
+
+  E --> F1
+  E --> F3
+  E --> F4
+  F2 <--> F5
+  F4 --> G[Report Artifacts<br/>json/html]
+
+  subgraph Cache[Optional Cache]
+    R[(Redis)]
+  end
+  F1 <--> R
+  F4 <--> R
+
+  UI[Next.js + ECharts] --> F1
+  UI --> F2
+  UI --> F3
+  UI --> F4
 ```
 
-策略配置文件示例（YAML/JSON）：
+## 4. 功能需求（详细）
 
-```yaml
-strategy: macd_cross
-params:
-  fast: 12
-  slow: 26
-  signal: 9
+### 4.1 数据采集（盘后）
+
+触发：每个交易日盘后（建议 16:30~18:00），以交易日历为准。
+输入：TuShare token、交易日 trade_date。
+输出：按日增量写入 Parquet（ts_code/year 分区），stock_basic 写入 MongoDB，必要时写入 DuckDB 索引表。
+
+采集内容（建议最小集）：
+
+stock_basic：ts_code, name, industry, market, list_date, ...
+
+daily（日线行情）：open, high, low, close, pre_close, change, pct_chg, vol, amount
+
+daily_basic（估值/换手/市值等）：turnover_rate, volume_ratio, pe, pe_ttm, pb, ps, total_mv, circ_mv, ...
+
+adj_factor（复权因子）
+
+trade_cal（交易日历）
+
+（可选增强）停复牌、涨跌停、公司行为（分红送转）等
+
+#### 数据质量要求
+
+幂等：重复运行同一天任务不会产生重复数据（按 ts_code + trade_date 去重/覆盖）。
+
+可追溯：Raw 层不做业务改写，保留原始字段与拉取时间。
+
+校验：行数对比（当日上市股票数量）、缺失率、字段类型检查。
+
+### 4.2 指标/特征生成（Feature Pipeline）
+
+触发：每日拉取完成后自动执行；也支持手动重算某一时间区间。
+输入：Raw 层日线（建议使用复权收盘价进行部分指标计算）。
+输出：写入 DuckDB 的 features_* 表（或统一宽表）。
+
+建议内置指标（MVP）：
+
+趋势：MA/EMA（5/10/20/60）、MACD
+
+动量：RSI（6/12/24）、KDJ（9,3,3）
+
+波动：ATR（14）、布林带（20,2）
+
+量价：OBV、成交量均线（5/10）
+
+衍生：N 日收益率、N 日波动率、N 日最高/最低突破等
+
+#### 指标版本管理（建议）
+
+feature_version：当指标算法或参数集变更时递增
+
+回测记录绑定：data_version + feature_version + strategy_version + cost_config
+
+### 4.3 策略管理（Strategy Service）
+
+策略定义 = 股票池（Universe） + 信号规则（Signal） + 撮合/约束（Execution） + 风控/仓位（可选）
+
+MVP 必须支持：
+
+策略 CRUD：创建/编辑/启用/禁用/删除（逻辑删除）
+
+策略版本化：保存时生成 strategy_version（内容 hash + 参数 + 依赖 feature_version）
+
+信号 API：输入 strategy_id + trade_date + ts_code 返回：
+
+BUY / SELL / HOLD
+
+附带原因（可解释字段）：触发条件、关键指标值（用于前端展示）
+
+策略表达方式（建议两种，先做简单版）：
+
+模板策略（推荐 MVP）：内置若干策略类型，通过参数配置
+
+例：均线金叉、MACD 金叉、RSI 超买超卖、布林带突破等
+
+脚本策略（后续）：用户自定义 Python 代码（需沙箱与安全隔离，自用也建议谨慎）
+
+### 4.4 单股回测（Backtest Service）
+
+输入：
+
+strategy_id
+
+ts_code
+
+start_date, end_date
+
+成本配置（手续费、印花税、滑点）
+
+撮合规则（默认：T 日收盘出信号，T+1 开盘成交）
+
+输出：
+
+交易明细（每笔成交：时间、方向、价格、数量、费用）
+
+权益曲线（每日净值/持仓/现金）
+
+指标：总收益、年化收益、最大回撤、夏普、胜率、盈亏比、换手率、交易次数等
+
+报告产物：JSON（必选），HTML（可选）
+
+撮合与约束（MVP 建议支持）：
+
+不可交易日：停牌/无行情则不成交
+
+信号冲突：同日多信号时按优先级处理（例如 SELL 优先）
+
+仓位：单股全仓/空仓（MVP）；后续再扩展分批、动态仓位
+
+滑点：按 bps 计算（买贵卖便宜）
+
+费用：买卖双边佣金；卖出印花税（可配置）
+
+### 4.5 前端页面（Next.js + ECharts）
+
+#### 股票列表页
+
+搜索（代码/名称）、筛选（行业、市值区间、上市天数、ST 等）
+
+展示：最新价、涨跌幅、成交额、市值、PE/PB、换手率等（来自 daily + daily_basic）
+
+#### 个股详情页（K 线页）
+
+K 线（前复权/后复权切换可后续）
+
+指标叠加（MA、MACD、RSI、KDJ、BOLL 等）
+
+策略信号点（BUY/SELL 标记）
+
+回测入口：选策略、选区间、成本参数 → 发起回测 → 展示报告
+
+#### 策略管理页
+
+策略列表：状态、版本、创建时间、最近回测时间
+
+策略编辑：策略类型选择 + 参数配置 + 依赖指标版本
+
+单点信号查询：选择日期 + 股票 → 展示信号与原因
+
+#### 回测报告页
+
+关键指标卡片
+
+权益曲线
+
+交易列表（可分页/筛选）
+
+回测配置回放（可复现）
+
+## 5. 数据与存储设计（DuckDB/Parquet）
+
+### 5.1 Parquet 目录建议
+
+```bash
+data/
+  raw/
+    daily/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
+    daily_basic/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
+    daily_limit/ts_code=XXXXXX.XX/year=YYYY/part-*.parquet
+    adj_factor/trade_date=YYYYMMDD/part-*.parquet
+    trade_cal/part-*.parquet
+  features/
+    features_daily/trade_date=YYYYMMDD/part-*.parquet
+  reports/
+    backtests/<backtest_id>.json
 ```
 
-### 3.2 信号标准
+### 5.2 DuckDB 表建议（Meta + Feature）
 
-* 统一信号枚举：`BUY` / `SELL` / `HOLD`（或 `NO_ACTION`）。可扩展为带打分的数值信号。
-* 优先级：同日多信号时定义优先规则（如 SELL > BUY > HOLD），并在回测中保持一致。
+meta_strategies：策略基本信息（id、name、type、params_json、is_enabled…）
 
-## 4. 功能点
+meta_strategy_versions：策略版本（strategy_id、version、hash、feature_version、created_at…）
 
-1. **数据刷新**：每日收盘后拉取最新日线与基本信息，落库并计算缺失指标。
-2. **指标重算**：针对历史数据（或指定日期区间）重新计算指标，支持增量。
-3. **策略管理**：列出策略、加载策略、更新策略配置。
-4. **信号查询**：输入（策略、日期、股票），返回单日信号（买入/卖出/不操作）。
-5. **单标的回测**：输入（策略、起止日期、股票），输出绩效报表与曲线。
+meta_backtests：回测记录（backtest_id、strategy_version、symbol、date_range、cost_config…）
 
-## 5. 回测设计（单只股票）
+features_daily：特征宽表（ts_code、trade_date、close_adj、ma_5、macd、rsi_14…）
 
-### 5.1 基础设定
+注：Raw 层可不全量导入 DuckDB，优先让 DuckDB 直接 read_parquet() 查询；Meta/索引类表放 DuckDB 更方便。
 
-* 价格执行：默认用日线收盘价成交，可配置 T+1 开盘价成交。
-* 成交与滑点：可配置固定滑点（如 1bp）和手续费（双边/单边费率）。
-* 仓位规则：全仓/半仓/固定仓位百分比，可在策略层输出目标仓位。
-* 复权处理：默认前复权数据进行回测，保持连续性。
+## 6. 后端 API（建议草案）
 
-### 5.2 绩效指标
+### 6.1 Market Data
 
-* 年化收益、累计收益、最大回撤、夏普比率、卡玛比率、胜率、平均盈亏比。
-* 交易统计：交易次数、平均持仓天数、换手率、最大单笔亏损。
-* 可选：基准对比（沪深 300/中证 500）、月度/年度分布。
+`GET /api/stocks`：列表（分页、搜索、筛选）
 
-### 5.3 输出
+`GET /api/stocks/{ts_code}/candles?start=&end=`：日线 K 线
 
-* 回测明细：逐日净值、仓位、信号、成交价格、持仓成本。
-* 汇总报表：核心指标表、收益曲线、回撤曲线（可导出 CSV/PNG）。
+`GET /api/stocks/{ts_code}/features?start=&end=&fields=`：指标/特征
 
-## 6. 组件与模块划分
+### 6.2 Strategy
 
-| 模块 | 主要职责 |
-| --- | --- |
-| `data_provider` | 对接数据源，拉取与校验行情、基本面、复权因子 |
-| `storage` | 数据落地与查询（DuckDB/SQLite/Parquet），主键与索引管理 |
-| `indicators` | 指标计算库，统一接口与参数化配置 |
-| `strategies` | 策略插件目录，基类 + 策略注册与加载 |
-| `signals` | 信号标准化、冲突消解、信号查询接口 |
-| `backtester` | 单标的回测引擎，执行规则、费用、滑点、统计指标 |
-| `cli` / `api` | 命令行或 HTTP 服务：数据刷新、策略回测、信号查询 |
+`GET /api/strategies`
 
-## 7. 运行与调度
+`POST /api/strategies`
 
-* **调度**：使用 cron/systemd/任务队列，每日收盘后执行数据刷新与指标增量计算。
-* **缓存**：指标计算结果与回测结果可做文件缓存，避免重复计算。
-* **日志与监控**：统一日志格式，记录数据拉取失败、缺口补齐、策略异常。
+`PUT /api/strategies/{id}`
 
-## 8. 配置与可扩展性
+`POST /api/strategies/{id}/enable`
 
-* 配置文件（YAML/JSON）：数据源凭据、拉取时间、指标参数、费用与滑点、基准指数、回测日期范围。
-* 插件扩展：新增数据源、指标、策略只需在对应目录注册，不影响核心框架。
-* 环境隔离：支持在虚拟环境/容器中运行，依赖管理（pandas、ta-lib 或自实现指标库）。
+`POST /api/strategies/{id}/disable`
 
-## 9. 安全与合规
+`GET /api/strategies/{id}/versions`
 
-* 数据源凭据需通过环境变量或密钥管理存储。
-* 若提供 HTTP API，需加认证与访问控制。
+### 6.3 Signal
 
-## 10. 开发里程碑（建议）
+GET /api/signal?strategy_id=&trade_date=&ts_code=
+返回：signal, reason, feature_snapshot
 
-1. 完成数据模块：拉取日线行情 + 基本信息，落地存储并增量更新。
-2. 完成指标模块：MACD、KDJ、MA/EMA，支持参数化与增量计算。
-3. 策略接口与样例策略：实现 MACD 交叉、KDJ 共振等示例策略。
-4. 信号查询 CLI：`signal --strategy macd --date 2024-01-10 --code 600000.SH`。
-5. 单标的回测引擎：收盘/开盘成交模式、手续费与滑点、绩效输出。
-6. 报表与可视化：收益/回撤曲线、交易明细导出。
+### 6.4 Backtest
+
+`POST /api/backtests`：发起回测（可同步 MVP；后续可异步）
+
+`GET /api/backtests/{backtest_id}`：回测结果（指标 + 权益曲线）
+
+`GET /api/backtests/{backtest_id}/trades`：交易明细
+
+## 7. 定时任务（APScheduler）
+
+建议 Job 列表：
+
+`job_trade_cal_sync`：每日/每周同步交易日历
+
+`job_daily_ingest`：交易日盘后拉取 daily/daily_basic/adj_factor
+
+`job_feature_compute`：增量计算当日特征
+
+`job_health_check`：数据缺失与任务告警（自用可先日志输出）
+
+**调度注意：**
+
+以交易日历为准，只在交易日执行。
+
+失败重试（指数退避或固定次数）。
+
+幂等：同一天可重复跑。
+
+## 8. 缓存策略（Redis，可选）
+
+适合缓存的内容：
+
+个股 K 线与特征：`ts_code` + `date_range` + `fields`
+
+单点信号：`strategy_version` + `trade_date` + `ts_code`
+
+回测结果：`backtest_id` 或配置 `hash`
+
+**失效策略：**
+
+当日数据更新后，清理当日相关 key
+
+策略版本更新后，清理对应策略的信号缓存
+
+## 9. 工程结构建议（Repo Layout）
+
+```powershell
+quant-platform/
+  backend/
+    app/
+      api/                 # FastAPI routers
+      core/                # config, logging, constants
+      data/                # parquet/duckdb access, tushare client
+      jobs/                # APScheduler jobs
+      features/            # indicator calculators
+      strategies/          # strategy templates + evaluation
+      backtest/            # matching engine + metrics
+      models/              # pydantic schemas
+    tests/
+    pyproject.toml
+  frontend/
+    pages/ or app/
+    components/
+    lib/
+    package.json
+  data/                    # local data dir (gitignore)
+  docker-compose.yml        # optional: redis
+  README.md
+```
+
+## 10. 本地运行（建议流程）
+
+### 10.1 配置
+
+后端环境变量（示例）
+
+```bash
+TUSHARE_TOKEN=...
+DATA_DIR=./data
+DUCKDB_PATH=./data/quant.duckdb
+REDIS_URL=redis://localhost:6379/0（可选）
+```
+
+### 10.2 启动顺序
+
+```bash
+（可选）启动 Redis：docker compose up -d redis
+```
+
+启动后端：`uvicorn app.main:app --reload`
+
+启动定时任务：随服务启动或独立进程启动（看实现）
+
+启动前端：`npm run dev`
+
+### 10.3 日线数据拉取（按交易日全市场）
+
+脚本会按日期遍历，每个交易日调用 TuShare 拉取全市场 daily 与 adj_factor，
+并写入 `data/raw/daily/ts_code=.../year=.../part-*.parquet` 分区。
+
+```bash
+# 拉取当天
+python backend/scripts/pull_daily_history.py
+
+# 拉取最近 7 天（可配合 --end-date 指定截止日期）
+python backend/scripts/pull_daily_history.py --last-days 7
+
+# 指定日期区间
+python backend/scripts/pull_daily_history.py --start-date 20240101 --end-date 20240131
+```
+
+### 10.4 Parquet 压缩合并（Compaction）
+
+将同一股票同一年目录下的多个 `part-*.parquet` 合并成单个 `part-0000.parquet`，
+以减少文件数量，查询时仍通过 `read_parquet` 自动读取。日线写入阶段不做去重，
+幂等由 compaction 的 `SELECT DISTINCT` 去重保障。
+
+```bash
+# 全量：遍历所有股票所有年份
+python backend/scripts/compact_daily_parquet.py
+
+# 只压缩单只股票
+python backend/scripts/compact_daily_parquet.py --ts-code 000001.SZ
+
+# 只压缩某一年
+python backend/scripts/compact_daily_parquet.py --year 2024
+
+# 单股单年
+python backend/scripts/compact_daily_parquet.py --ts-code 000001.SZ --year 2024
+```
+
+## 11. 验收标准（MVP）
+
+- 任意交易日：能拉取全市场 daily + daily_basic 并落地 Parquet
+- 任意股票：K 线页能展示（含成交量），并能叠加至少 6 个指标（MA/MACD/RSI/KDJ/BOLL/ATR）
+- 策略管理：支持创建/编辑/启用/禁用；策略保存后生成版本
+- 单点信号：给定策略+日期+股票，返回 BUY/SELL/HOLD + 原因
+- 单股回测：能跑完并输出指标、权益曲线、交易明细；前端可查看报告
+
+## 12. Roadmap（建议）
+
+### Phase 1（MVP）
+
+- 数据拉取 + Parquet 落地 + DuckDB 查询
+- 指标计算与特征表
+- 策略模板（2~4 个）+ 版本管理
+- 单股回测 + 报告页
+
+### Phase 2（增强）
+
+- 异步回测（队列）+ 任务状态
+- 批量回测（股票池）与排行榜
+- 更多市场约束（涨跌停/停牌/复权切换）
+- 更完善的因子库与筛选条件
+
+### Phase 3（研究能力）
+
+- 参数寻优、Walk-forward
+- 组合回测与风控模块
+- 研究 Notebook 工作流（可选）
+
+## 13. 风险与边界说明
+
+TuShare 有频率/额度限制：需要做增量拉取、失败重试与缓存。
+
+天级回测的“成交价假设”会显著影响结果：默认采用 T+1 开盘成交，并明确在报告中展示配置。
+
+复权与公司行为处理决定策略表现真实性：MVP 可先使用复权收盘价计算指标，后续再细化分红送转事件处理。
+
+## 14. License
+
+自用项目（internal use）。
+
+
+## 本地启动
+```bash
+# 后端：
+conda activate freedom
+cd backend
+uvicorn app.main:app --reload --host 0.0.0.0 --port 9000 --reload-dir app
+
+# 前端：
+cd frontend
+npm run dev
+```

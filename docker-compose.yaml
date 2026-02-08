@@ -1,0 +1,95 @@
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+    networks:
+      default:
+      proxy:
+        aliases:
+          - freedom-app
+
+  backend:
+    build:
+      context: ./backend
+    expose:
+      - "9000"
+    environment:
+      TUSHARE_TOKEN: e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e
+      DATA_DIR: /data
+      DUCKDB_PATH: /data/quant.duckdb
+      REDIS_URL: redis://redis:6379/0
+      MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
+      ACCESS_TOKEN_EXPIRES_MINUTES: 2880
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+      - mongodb
+
+  scheduler:
+    build:
+      context: ./backend
+    command: ["python", "/app/scripts/scheduler.py"]
+    environment:
+      TUSHARE_TOKEN: e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e
+      DATA_DIR: /data
+      DUCKDB_PATH: /data/quant.duckdb
+      REDIS_URL: redis://redis:6379/0
+      MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
+      ACCESS_TOKEN_EXPIRES_MINUTES: 2880
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+      - mongodb
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /freedom/api
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: james
+      MONGO_INITDB_ROOT_PASSWORD: 2x#fdksma!
+    volumes:
+      - ./data/mongo:/data/db
+
+  qinglong:
+    image: whyour/qinglong:latest
+    ports:
+      - "5700:5700"
+    environment:
+      QlBaseUrl: "/"
+    volumes:
+      - ./data/qinglong:/ql/data
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+
+networks:
+  proxy:
+    external: true
