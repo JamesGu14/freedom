@@ -24,9 +24,11 @@ def create_app() -> FastAPI:
         ensure_stock_basic_indexes()
         from app.data.mongo_users import ensure_admin_user, ensure_users_indexes
         from app.data.mongo_refresh_tokens import ensure_refresh_token_indexes
+        from app.data.mongo_backtest import ensure_strategy_backtest_indexes
 
         ensure_users_indexes()
         ensure_refresh_token_indexes()
+        ensure_strategy_backtest_indexes()
         ensure_admin_user(settings.admin_username, settings.admin_password)
 
     return application

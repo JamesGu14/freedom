@@ -433,13 +433,14 @@ export default function StockKline() {
                 const num = typeof val === "number" ? val : parseFloat(val);
                 return isNaN(num) ? "-" : num.toFixed(4);
               };
+              const formatPct = (val) => {
+                if (val == null || val === "" || Number.isNaN(val)) return "-";
+                const prefix = val > 0 ? "+" : "";
+                return `${prefix}${val.toFixed(2)}%`;
+              };
               const index = params[0].dataIndex;
               const date = dates[index];
               const lines = [`${date}`];
-              const indicator =
-                index >= 0 && index < sortedDaily.length
-                  ? getInd(sortedDaily[index])
-                  : null;
 
               // K线数据 - 从原始数据读取，确保准确性（兼容不同字段名）
               if (index >= 0 && index < sortedDaily.length) {
@@ -448,109 +449,24 @@ export default function StockKline() {
                 const c = item.close ?? item.close_price;
                 const l = item.low ?? item.low_price;
                 const h = item.high ?? item.high_price;
+                const prevClose =
+                  item.pre_close ??
+                  item.preclose ??
+                  item.prev_close ??
+                  (index > 0
+                    ? sortedDaily[index - 1]?.close ?? sortedDaily[index - 1]?.close_price
+                    : null);
+                const pct =
+                  prevClose && Number(prevClose) > 0 && c != null
+                    ? ((Number(c) - Number(prevClose)) / Number(prevClose)) * 100
+                    : null;
+                lines.push(`涨跌幅: ${formatPct(pct)}`);
                 lines.push(
                   `开盘: ${formatNumber(o)}`,
                   `收盘: ${formatNumber(c)}`,
                   `最低: ${formatNumber(l)}`,
                   `最高: ${formatNumber(h)}`
                 );
-              }
-
-              // MA数据
-              const ma5 = params.find((item) => item.seriesName === "MA5");
-              const ma10 = params.find((item) => item.seriesName === "MA10");
-              const ma20 = params.find((item) => item.seriesName === "MA20");
-              const ma30 = params.find((item) => item.seriesName === "MA30");
-              const ma60 = params.find((item) => item.seriesName === "MA60");
-              const ma90 = params.find((item) => item.seriesName === "MA90");
-              const ma250 = params.find((item) => item.seriesName === "MA250");
-              if (ma5 || ma10 || ma20 || ma30 || ma60 || ma90 || ma250) {
-                lines.push("");
-                if (ma5) lines.push(`MA5: ${formatNumber(ma5.value)}`);
-                if (ma10) lines.push(`MA10: ${formatNumber(ma10.value)}`);
-                if (ma20) lines.push(`MA20: ${formatNumber(ma20.value)}`);
-                if (ma30) lines.push(`MA30: ${formatNumber(ma30.value)}`);
-                if (ma60) lines.push(`MA60: ${formatNumber(ma60.value)}`);
-                if (ma90) lines.push(`MA90: ${formatNumber(ma90.value)}`);
-                if (ma250) lines.push(`MA250: ${formatNumber(ma250.value)}`);
-              }
-
-              const bollUp = params.find((item) => item.seriesName === "BOLL-UP");
-              const bollMid = params.find((item) => item.seriesName === "BOLL-MID");
-              const bollDn = params.find((item) => item.seriesName === "BOLL-DN");
-              if (bollUp || bollMid || bollDn) {
-                lines.push("");
-                if (bollUp) lines.push(`BOLL-UP: ${formatNumber(bollUp.value)}`);
-                if (bollMid) lines.push(`BOLL-MID: ${formatNumber(bollMid.value)}`);
-                if (bollDn) lines.push(`BOLL-DN: ${formatNumber(bollDn.value)}`);
-              }
-
-              // 成交量
-              const volume = params.find((item) => item.seriesName === "成交量");
-              if (volume) {
-                lines.push(`成交量: ${formatNumber(volume.value)}`);
-              }
-
-              // RSI 数据
-              const rsi6 = params.find((item) => item.seriesName === "RSI6");
-              const rsi12 = params.find((item) => item.seriesName === "RSI12");
-              const rsi24 = params.find((item) => item.seriesName === "RSI24");
-              if (rsi6 || rsi12 || rsi24) {
-                lines.push("");
-                if (rsi6) lines.push(`RSI6: ${formatNumber(rsi6.value)}`);
-                if (rsi12) lines.push(`RSI12: ${formatNumber(rsi12.value)}`);
-                if (rsi24) lines.push(`RSI24: ${formatNumber(rsi24.value)}`);
-              }
-
-              // KDJ数据
-              const kdjK = params.find((item) => item.seriesName === "KDJ-K");
-              const kdjD = params.find((item) => item.seriesName === "KDJ-D");
-              const kdjJ = params.find((item) => item.seriesName === "KDJ-J");
-              if (kdjK || kdjD || kdjJ) {
-                lines.push("");
-                if (kdjK) lines.push(`KDJ-K: ${formatNumber(kdjK.value)}`);
-                if (kdjD) lines.push(`KDJ-D: ${formatNumber(kdjD.value)}`);
-                if (kdjJ) lines.push(`KDJ-J: ${formatNumber(kdjJ.value)}`);
-              }
-
-              // MACD数据
-              const macd = params.find((item) => item.seriesName === "MACD");
-              const macdSignal = params.find((item) => item.seriesName === "MACD-Signal");
-              const macdHist = params.find((item) => item.seriesName === "MACD-Hist");
-              if (macd || macdSignal || macdHist) {
-                lines.push("");
-                if (macd) lines.push(`MACD: ${formatNumber(macd.value)}`);
-                if (macdSignal) lines.push(`MACD-Signal: ${formatNumber(macdSignal.value)}`);
-                if (macdHist) lines.push(`MACD-Hist: ${formatNumber(macdHist.value)}`);
-              }
-
-              const wr14 = params.find((item) => item.seriesName === "WR14");
-              const wr28 = params.find((item) => item.seriesName === "WR28");
-              if (wr14 || wr28) {
-                lines.push("");
-                if (wr14) lines.push(`WR14: ${formatNumber(wr14.value)}`);
-                if (wr28) lines.push(`WR28: ${formatNumber(wr28.value)}`);
-              }
-
-              const cci = params.find((item) => item.seriesName === "CCI");
-              if (cci) {
-                lines.push("");
-                lines.push(`CCI: ${formatNumber(cci.value)}`);
-              }
-
-              const atr = params.find((item) => item.seriesName === "ATR");
-              if (atr) {
-                lines.push("");
-                lines.push(`ATR: ${formatNumber(atr.value)}`);
-              }
-
-              if (indicator) {
-                lines.push("");
-                lines.push(`量比: ${formatNumber(indicator.volume_ratio)}`);
-                lines.push(`换手率: ${formatNumber(indicator.turnover_rate)}`);
-                lines.push(`换手率(自由流通): ${formatNumber(indicator.turnover_rate_f)}`);
-                lines.push(`连涨天数: ${formatNumber(indicator.updays)}`);
-                lines.push(`连跌天数: ${formatNumber(indicator.downdays)}`);
               }
 
               return lines.join("<br/>");

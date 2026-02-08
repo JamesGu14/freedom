@@ -603,7 +603,7 @@
 
 ## 20.2 回测 API
 
-1. `POST /api/backtests`：创建回测任务。
+1. `POST /api/backtests`：创建回测 run 元信息（不直接执行）。
 2. `GET /api/backtests`：任务列表。
 3. `GET /api/backtests/{run_id}`：任务详情+汇总指标。
 4. `GET /api/backtests/{run_id}/nav`：净值序列。
@@ -669,6 +669,12 @@
 
 5. 可观测性：
 - 统一 logging，记录每阶段耗时与数据量。
+
+6. 首版性能目标（基准机）：
+- 历史全量回测（2010-01-01 至今，约 3900+ 交易日）单策略单版本在 `<= 2h` 内完成。
+- 区间回测（最近 1 年）在 `<= 8min` 内完成。
+- `GET /api/backtests/{run_id}` P95 `< 300ms`，`GET /api/backtests/{run_id}/nav` P95 `< 800ms`。
+- 回测详情页首屏（指标卡 + 净值图）接口总耗时 P95 `< 1.5s`。
 
 ---
 
@@ -791,11 +797,11 @@
 3. `backtest_runs`
 - `run_id`（唯一）
 - `strategy_id`, `strategy_version_id`
-- `run_type`（full_history / range / rolling）
+- `run_type`（首版：`full_history` / `range`；`rolling` 预留）
 - `start_date`, `end_date`
 - `initial_capital`
 - `status`（pending/running/success/failed）
-- `summary_metrics`（return/cagr/mdd/sharpe/win_rate/turnover）
+- `summary_metrics`（`total_return`, `annual_returns`, `annual_max_drawdowns`, `start_nav`, `end_nav`, `benchmark_total_return`, `trade_count`, `win_rate`）
 - `created_at`, `finished_at`, `error_message`
 - 索引：`(strategy_id, created_at)`、`(strategy_version_id, created_at)`
 
@@ -839,7 +845,7 @@
 - 查询回测历史记录。
 
 6. `POST /api/backtests`
-- 发起回测（必须带 `strategy_version_id`）。
+- 创建回测 run 元信息（必须带 `strategy_version_id`，不直接执行）。
 
 7. `POST /api/backtests/compare`
 - 输入多个 `run_id`，返回分年度年化、分年度最大回撤与多条净值序列。
@@ -939,7 +945,7 @@ flowchart LR
     B --> C[发布新版本 StrategyVersion]
     C --> C1[保存 params_snapshot + code_ref]
 
-    C --> D[发起回测 POST /api/backtests]
+    C --> D[创建回测 run 元信息 POST /api/backtests]
     D --> E[生成 BacktestRun run_id]
     E --> F[回测引擎执行]
 
@@ -1048,11 +1054,12 @@ flowchart LR
 1. `run_id`（字符串，唯一）
 2. `strategy_id`
 3. `strategy_version_id`
-4. `start_date`（YYYYMMDD）
-5. `end_date`（YYYYMMDD）
-6. `initial_capital`（默认 1000000）
-7. `status`（`pending/running/success/failed`）
-8. `summary_metrics`（至少含 `total_return`, `annual_returns`, `annual_max_drawdowns`）
+4. `run_type`（`full_history` / `range`）
+5. `start_date`（YYYYMMDD）
+6. `end_date`（YYYYMMDD）
+7. `initial_capital`（默认 1000000）
+8. `status`（`pending/running/success/failed`）
+9. `summary_metrics`（至少含 `total_return`, `annual_returns`, `annual_max_drawdowns`）
 
 ## 32.2 `backtest_signals_daily`
 
@@ -1084,6 +1091,19 @@ flowchart LR
 2. `nav`, `cash`, `position_value`
 3. `drawdown`
 4. `benchmark_nav`（`000300.SH`）
+
+## 32.5 `backtest_positions_daily`
+
+唯一键：
+
+1. `(run_id, trade_date, ts_code)`
+
+必填字段：
+
+1. `run_id`, `trade_date`, `ts_code`
+2. `shares`, `cost_price`, `market_price`
+3. `market_value`, `pnl`, `weight`
+4. `holding_days`
 
 ---
 
@@ -1132,3 +1152,162 @@ flowchart LR
 4. 可运维性：
 - 手动运行脚本可看到阶段日志（读取、打分、撮合、落库、汇总）。
 - 回测失败时 `backtest_runs.status=failed` 且 `error_message` 有效。
+
+---
+
+## 35. 最终接口与前端契约（消除歧义）
+
+本节用于固定首版实现口径，开发以本节为准。
+
+## 35.1 回测触发模式（固定）
+
+1. 首版唯一执行入口：`backend/scripts/backtest/run_backtest.py` 手动执行。
+2. `POST /api/backtests` 保留，但仅用于“创建 run 元信息”，不直接触发回测执行。
+3. 手动脚本支持传入已有 `run_id` 继续执行该 run（状态从 `pending` 置为 `running`）。
+4. 脚本执行完成后回填 `backtest_runs.status`、`summary_metrics`、`finished_at`。
+5. 不引入任务队列、worker、异步调度框架。
+
+## 35.2 `summary_metrics` 固定结构
+
+`backtest_runs.summary_metrics` 统一为以下 JSON 结构：
+
+1. `total_return`: `float`
+2. `annual_returns`: `dict[str, float]`，key 为年份（如 `"2024"`）
+3. `annual_max_drawdowns`: `dict[str, float]`，key 为年份（如 `"2024"`）
+4. `start_nav`: `float`
+5. `end_nav`: `float`
+6. `benchmark_total_return`: `float`
+7. `trade_count`: `int`
+8. `win_rate`: `float`
+
+说明：
+
+1. 前端首页和对比页只依赖 `total_return`、`annual_returns`、`annual_max_drawdowns`。
+2. 其余字段用于详情页扩展和后续统计，不影响首版展示核心指标。
+
+## 35.3 前端页面数据契约
+
+## 35.3.1 策略列表页 `/strategies`
+
+1. 数据源：`GET /api/strategies`
+2. 每条策略最小返回字段：
+- `strategy_id`
+- `name`
+- `status`
+- `latest_version`
+- `latest_run_id`
+- `latest_summary.total_return`
+- `latest_summary.annual_returns`
+- `latest_summary.annual_max_drawdowns`
+
+## 35.3.2 策略详情页 `/strategies/{strategy_id}`
+
+1. 版本列表：`GET /api/strategies/{strategy_id}/versions`
+2. 回测历史：`GET /api/backtests?strategy_id={strategy_id}`
+3. 最小返回字段：
+- `strategy_version_id`
+- `version`
+- `params_snapshot`
+- `code_ref`
+- `run_id`
+- `start_date`, `end_date`
+- `status`
+- `summary_metrics`
+
+## 35.3.3 回测详情页 `/backtests/{run_id}`
+
+1. 指标卡：`GET /api/backtests/{run_id}`
+2. 净值图：`GET /api/backtests/{run_id}/nav`
+3. 回撤图：`GET /api/backtests/{run_id}/drawdown`
+4. 交易表：`GET /api/backtests/{run_id}/trades?page=&page_size=`
+5. 信号表：`GET /api/backtests/{run_id}/signals?trade_date=&page=&page_size=`
+
+分页默认值（固定）：
+
+1. `page` 默认 `1`
+2. `page_size` 默认 `20`，最大 `200`
+
+## 35.3.4 回测对比页 `/backtests/compare`
+
+1. 数据源：`POST /api/backtests/compare`
+2. 请求体：
+- `run_ids: list[str]`
+3. 约束：
+- `run_ids` 长度 `2~5`（最多 5 个 run 同屏对比）
+3. 响应体最小字段：
+- `items[].run_id`
+- `items[].strategy_id`
+- `items[].strategy_version_id`
+- `items[].summary_metrics.total_return`
+- `items[].summary_metrics.annual_returns`
+- `items[].summary_metrics.annual_max_drawdowns`
+- `items[].nav_series`（日期+净值）
+
+## 35.3.5 空态与错误态（固定）
+
+1. 无数据：返回空数组，不返回 `null`。
+2. 查询不到 `run_id`：HTTP `404`。
+3. 参数错误：HTTP `400`，返回 `detail`。
+4. 服务异常：HTTP `500`，返回统一错误信息。
+
+默认筛选时间范围（前端固定）：
+
+1. 回测列表页默认显示最近 `1` 年（可手动改区间）。
+
+## 35.4 资金分配与下单规则（固定）
+
+下单顺序与金额计算按以下顺序执行：
+
+1. 当日先生成全部 `SELL`（含 `SELL_ROTATE`），再生成 `BUY`。
+2. 买入候选排序键：
+- 第一排序：`total_score DESC`
+- 第二排序：`sector_strength DESC`
+- 第三排序：`ts_code ASC`（稳定排序）
+3. 单票目标权重：
+- 由档位映射得到 `base_weight`
+- 再乘 `market_exposure` 得 `target_weight`
+- 再受 `sector_max` 约束
+4. 目标金额：`target_amount = total_equity_t * target_weight`
+5. 其中 `total_equity_t = cash_t + position_value_t`（当日调仓前账户总资产）。
+6. 下单股数：
+- `qty = floor(target_amount / open_price / 100) * 100`
+- 若 `qty <= 0` 则跳过该买单
+7. 现金约束：
+- 按排序依次分配，现金不足则后续候选放弃
+8. 轮动约束：
+- `SELL_ROTATE` 未成交则对应 `BUY_ROTATE` 不执行（整组取消）
+
+## 35.5 信号集合命名（固定）
+
+1. 回测专用信号集合：`backtest_signals_daily`（按 `run_id` 隔离）。
+2. 生产每日扫描信号集合：`strategy_signals_daily`（不带 `run_id`，按 `trade_date + strategy_id + strategy_version_id`）。
+3. 两者禁止混用，页面查询回测时只读 `backtest_signals_daily`。
+
+## 35.6 首版前端验收口径（固定）
+
+1. 回测详情页必须显示：
+- 累计收益
+- 分年度年化
+- 分年度最大回撤
+- 策略净值曲线
+- 交易明细
+2. 回测对比页必须支持至少 2 个 `run_id` 同屏对比。
+3. 所有分年度指标按自然年切分（`YYYY-01-01` 到 `YYYY-12-31`）。
+
+## 35.7 脚本参数与状态流转（固定）
+
+`run_backtest.py` 最小参数：
+
+1. `--strategy-id`
+2. `--strategy-version-id`
+3. `--start-date`
+4. `--end-date`
+5. `--initial-capital`（默认 `1000000`）
+6. `--run-id`（可选；不传则脚本先创建 run）
+
+状态流转：
+
+1. 创建后：`pending`
+2. 开始执行：`running`
+3. 成功结束：`success`
+4. 异常退出：`failed`

@@ -75,7 +75,7 @@ def get_market_factors(
 @router.get("/market-index/chart")
 def get_market_chart(
     ts_code: str = Query(...),
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=500, ge=1, le=10000),
 ) -> dict[str, object]:
     code = ts_code.upper()
     rows = get_market_index_chart(ts_code=code, limit=limit)

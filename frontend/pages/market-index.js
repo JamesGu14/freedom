@@ -146,20 +146,27 @@ const buildChartOption = (rows) => {
       axisPointer: { type: "cross" },
       formatter: (params) => {
         if (!params || params.length === 0) return "";
-        const date = params[0].axisValue || "-";
+        const index = params[0].dataIndex;
+        const row = index >= 0 && index < sorted.length ? sorted[index] : null;
+        const date = row ? formatDate(row.trade_date) : params[0].axisValue || "-";
+        const open = toNum(row?.open);
+        const close = toNum(row?.close);
+        const low = toNum(row?.low);
+        const high = toNum(row?.high);
+        const prevClose =
+          toNum(row?.pre_close) ??
+          toNum(row?.prev_close) ??
+          (index > 0 ? toNum(sorted[index - 1]?.close) : null);
+        const pct =
+          prevClose && Number(prevClose) > 0 && close != null
+            ? ((Number(close) - Number(prevClose)) / Number(prevClose)) * 100
+            : null;
         const lines = [`${date}`];
-        params.forEach((item) => {
-          if (item.seriesName === "K线") {
-            const values = Array.isArray(item.value) ? item.value : [];
-            lines.push(
-              `开:${formatChartValue(values[0])} 收:${formatChartValue(values[1])} ` +
-                `低:${formatChartValue(values[2])} 高:${formatChartValue(values[3])}`
-            );
-            return;
-          }
-          const value = item?.data?.value ?? item?.value;
-          lines.push(`${item.seriesName}: ${formatChartValue(value)}`);
-        });
+        lines.push(`涨跌幅: ${formatPct(pct)}`);
+        lines.push(
+          `开盘: ${formatChartValue(open)} 收盘: ${formatChartValue(close)} ` +
+            `最低: ${formatChartValue(low)} 最高: ${formatChartValue(high)}`
+        );
         return lines.join("<br/>");
       },
     },
