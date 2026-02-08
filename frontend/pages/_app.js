@@ -55,6 +55,12 @@ function AppShell({ Component, pageProps }) {
             <Link href="/watchlist" className="nav-link">
               自选
             </Link>
+            <Link href="/strategies" className="nav-link">
+              策略
+            </Link>
+            <Link href="/backtests" className="nav-link">
+              回测
+            </Link>
             {canManageUsers ? (
               <Link href="/users" className="nav-link">
                 用户管理

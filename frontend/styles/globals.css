@@ -1463,6 +1463,307 @@ td:first-child {
   box-shadow: 0 10px 20px rgba(226, 59, 46, 0.2);
 }
 
+button.link-button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(31, 20, 18, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-card {
+  width: min(860px, 96vw);
+  max-height: 86vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  padding: 16px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.params-json {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.compact-panel {
+  padding: 12px 14px;
+}
+
+.compact-table table th,
+.compact-table table td {
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* 回测列表更紧凑 */
+.backtests-table table th,
+.backtests-table table td {
+  padding: 6px 6px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+/* 交易明细-持仓情况：竖向列表，每行一只股票 */
+.holdings-cell {
+  min-width: 260px;
+  max-width: 320px;
+  vertical-align: top;
+}
+.holdings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.holdings-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 52px 72px;
+  gap: 4px;
+  align-items: center;
+  font-size: 10px;
+  line-height: 1.25;
+  padding: 1px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.holdings-row:last-child {
+  border-bottom: none;
+}
+.holdings-row.holdings-header {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 600;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.holdings-code {
+  font-weight: 600;
+  color: var(--ink);
+}
+.holdings-name {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.holdings-qty {
+  text-align: right;
+  color: var(--ink);
+}
+.holdings-return {
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.holdings-value {
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-holdings-summary {
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.holdings-summary {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  display: grid;
+  gap: 2px;
+}
+
+/* 交易明细表：只有“交易日”列用红色加粗，代码列统一黑色，避免 rowSpan 导致代码被误当第一列而变红 */
+.trade-details-table td:first-child {
+  font-weight: 500;
+  color: var(--ink);
+}
+.trade-details-table td.trade-date-cell {
+  font-weight: 700;
+  color: var(--accent);
+}
+.trade-details-table td.trade-code-cell {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* 回测结果：左 3/4 净值线图 + 右 1/4 持仓占比饼图 */
+.backtest-charts-row {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+.backtest-chart-nav {
+  flex: 3;
+  min-width: 0;
+}
+.backtest-chart-right {
+  flex: 1;
+  min-width: 200px;
+  height: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.backtest-chart-exposure {
+  flex: 1;
+  min-height: 0;
+}
+.backtest-chart-placeholder {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--border-light);
+}
+.backtest-placeholder-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.holdings-summary {
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+.holdings-summary-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.holdings-summary-empty {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 12px 0;
+}
+.holdings-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+}
+.holdings-summary-row {
+  display: grid;
+  grid-template-columns: 74px 1fr 72px 64px;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--ink);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.holdings-summary-row:last-child {
+  border-bottom: none;
+}
+.holdings-summary-code {
+  font-weight: 600;
+}
+.holdings-summary-name {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.holdings-summary-date {
+  color: var(--muted);
+  text-align: right;
+}
+.holdings-summary-return {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.holdings-tooltip {
+  position: absolute;
+  min-width: 240px;
+  max-width: 320px;
+  z-index: 5;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 8px 10px;
+}
+.holdings-tooltip-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.holdings-tooltip-loading,
+.holdings-tooltip-empty {
+  font-size: 11px;
+  color: var(--muted);
+}
+.holdings-tooltip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ink);
+}
+.holdings-tooltip-row {
+  display: grid;
+  grid-template-columns: 72px 44px 48px 48px 60px;
+  gap: 4px;
+  align-items: center;
+}
+.trade-buy {
+  color: #dc2626;
+  font-weight: 600;
+}
+.trade-sell {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.compact-pagination {
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
 .loading-container {
   display: flex;
   flex-direction: column;

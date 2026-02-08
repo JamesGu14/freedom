@@ -103,7 +103,7 @@ def compact_partition(partition_dir: Path) -> tuple[int, int]:
         # Use filename=true so we can ORDER BY filename DESC to keep latest file's record
         select_sql = (
             "SELECT * EXCLUDE (filename) "
-            "FROM read_parquet('{glob}', filename=true) "
+            "FROM read_parquet('{glob}', filename=true, union_by_name=true) "
             "QUALIFY row_number() OVER "
             "(PARTITION BY ts_code, trade_date ORDER BY filename DESC) = 1"
         ).format(glob=part_glob_sql)
@@ -111,7 +111,7 @@ def compact_partition(partition_dir: Path) -> tuple[int, int]:
 
         # Safety check: count before and after dedup
         before_count = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{part_glob_sql}')"
+            f"SELECT COUNT(*) FROM read_parquet('{part_glob_sql}', union_by_name=true)"
         ).fetchone()[0]
         after_count = con.execute(
             f"SELECT COUNT(*) FROM ({select_sql})"
