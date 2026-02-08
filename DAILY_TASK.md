@@ -1,5 +1,31 @@
 # Daily Tasks
 
+## 0) Use `backend/scripts/daily/daily.sh` (推荐)
+
+一键执行日常任务（拉取日线 -> 同步技术因子 -> 计算信号 -> 同步申万日线）。
+
+```bash
+# 在项目根目录执行（默认跑当天）
+bash backend/scripts/daily/daily.sh
+
+# 指定开始日期（结束日期默认今天）
+bash backend/scripts/daily/daily.sh --start-date 20260201
+
+# 指定日期区间
+bash backend/scripts/daily/daily.sh --start-date 20260201 --end-date 20260206
+```
+
+参数说明：
+
+- `--start-date`：开始日期，支持 `YYYYMMDD` 或 `YYYY-MM-DD`
+- `--end-date`：结束日期，支持 `YYYYMMDD` 或 `YYYY-MM-DD`，不传默认今天
+
+日志输出：
+
+- `logs/daily_*.log`
+
+---
+
 ## 1) Pull daily market data (K-line)
 
 ```bash
@@ -8,10 +34,12 @@ python backend/scripts/daily/pull_daily_history.py --start-date 20260202
 python backend/scripts/daily/pull_daily_history.py --start-date 20240101 --end-date 20240131
 ```
 
-## 2) Calculate indicators
+## 2) Sync stock factors
 
 ```bash
-python backend/scripts/one_time/calculate_indicators.py
+python backend/scripts/daily/sync_stk_factor_pro.py --last-days 1
+python backend/scripts/daily/sync_stk_factor_pro.py --trade-date 20260206
+python backend/scripts/daily/sync_stk_factor_pro.py --start-date 20260101 --end-date 20260206
 ```
 
 ## 3) Calculate daily signals

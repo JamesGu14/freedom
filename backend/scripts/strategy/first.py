@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -12,6 +13,8 @@ import pandas as pd
 from app.data.duckdb_store import list_indicators  # noqa: E402
 from app.data.mongo_stock import list_stock_codes  # noqa: E402
 from scripts.strategy.base_strategy import BaseStrategy  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 def load_all_stocks() -> list[str]:
@@ -103,9 +106,13 @@ def check_ma5_cross_above_ma20(ts_code: str) -> bool:
 
 def main() -> None:
     """Main function to check ma5 crossing above ma20 for all stocks."""
-    print("Loading all stocks...")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
+    logger.info("Loading all stocks...")
     stock_list = load_all_stocks()
-    print(f"Found {len(stock_list)} stocks\n")
+    logger.info("Found %s stocks", len(stock_list))
 
     crossed_stocks = []
 
@@ -113,12 +120,12 @@ def main() -> None:
         try:
             if check_ma5_cross_above_ma20(ts_code):
                 crossed_stocks.append(ts_code)
-                print(f"[{idx}/{len(stock_list)}] {ts_code}: ma5 crossed above ma20")
+                logger.info("[%s/%s] %s: ma5 crossed above ma20", idx, len(stock_list), ts_code)
         except Exception:
             # Skip stocks with errors
             continue
 
-    print(f"\nTotal stocks with ma5 crossing above ma20: {len(crossed_stocks)}")
+    logger.info("Total stocks with ma5 crossing above ma20: %s", len(crossed_stocks))
 
 
 if __name__ == "__main__":

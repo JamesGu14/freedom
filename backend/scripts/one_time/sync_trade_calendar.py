@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import logging
 import sys
 import time
 from pathlib import Path
 
 import pandas as pd
+from tqdm import tqdm
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
@@ -15,6 +17,8 @@ sys.path.append(str(SCRIPT_ROOT))
 from app.core.config import settings  # noqa: E402
 from app.data.mongo_trade_calendar import upsert_trade_calendar  # noqa: E402
 from app.data.tushare_client import fetch_trade_calendar  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,15 +55,19 @@ def _to_records(df: pd.DataFrame) -> list[dict[str, object]]:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     args = parse_args()
     if not settings.tushare_token:
         raise SystemExit("TUSHARE_TOKEN is required")
 
     ranges = _build_year_ranges(args.start_date, args.end_date)
     total = 0
-    for idx, (start_date, end_date) in enumerate(ranges, start=1):
+    progress = tqdm(ranges, total=len(ranges), desc="sync_trade_calendar", unit="range", dynamic_ncols=True)
+    for start_date, end_date in progress:
         try:
-            print(f"[{idx}/{len(ranges)}] {start_date}~{end_date} ...")
             df = fetch_trade_calendar(
                 exchange=args.exchange,
                 start_date=start_date,
@@ -68,12 +76,12 @@ def main() -> None:
             records = _to_records(df)
             inserted = upsert_trade_calendar(records)
             total += inserted
-            print(f"[{idx}/{len(ranges)}] upserted {inserted} records")
+            progress.set_postfix(range=f"{start_date}-{end_date}", upserted=inserted, total=total)
         except Exception as exc:
-            print(f"[{idx}/{len(ranges)}] failed: {exc}")
+            logger.exception("sync trade calendar failed for %s~%s: %s", start_date, end_date, exc)
         time.sleep(args.sleep)
 
-    print(f"done, upserted {total} records")
+    logger.info("sync_trade_calendar done, upserted=%s", total)
 
 
 if __name__ == "__main__":

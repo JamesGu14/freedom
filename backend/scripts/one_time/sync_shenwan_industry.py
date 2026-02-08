@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import logging
 import sys
 import time
 from pathlib import Path
@@ -15,6 +16,8 @@ sys.path.append(str(SCRIPT_ROOT))
 from app.core.config import settings  # noqa: E402
 from app.data.mongo_shenwan import upsert_shenwan_industry  # noqa: E402
 from app.data.tushare_client import fetch_shenwan_classify  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 VERSION_SRC = {
     "2014": "SW2014",
@@ -212,7 +215,7 @@ def validate_relationships(records: list[dict[str, object]]) -> None:
         if parent_code not in code_set:
             missing_parent += 1
     if missing_parent:
-        print(f"warning: {missing_parent} records missing parent linkage")
+        logger.warning("missing parent linkage count=%s", missing_parent)
 
 
 def fetch_version_records(version: str, sleep_seconds: float) -> list[dict[str, object]]:
@@ -225,7 +228,7 @@ def fetch_version_records(version: str, sleep_seconds: float) -> list[dict[str, 
         records = build_level_records(df, version=version, default_level=level_num)
         level_data[level_num] = records
         all_records.extend(records)
-        print(f"{version} {level_code} rows={len(records)}")
+        logger.info("version=%s level=%s rows=%s", version, level_code, len(records))
         time.sleep(sleep_seconds)
 
     level1_map = {
@@ -244,6 +247,10 @@ def fetch_version_records(version: str, sleep_seconds: float) -> list[dict[str, 
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     args = parse_args()
     if not settings.tushare_token:
         raise SystemExit("TUSHARE_TOKEN is required")
@@ -255,13 +262,13 @@ def main() -> None:
 
     total_records = 0
     for version in versions:
-        print(f"fetching version {version} ...")
+        logger.info("fetching version=%s", version)
         records = fetch_version_records(version, args.sleep)
         inserted = upsert_shenwan_industry(records)
         total_records += inserted
-        print(f"version {version} upserted {inserted} records")
+        logger.info("version=%s upserted=%s", version, inserted)
 
-    print(f"done, upserted {total_records} records")
+    logger.info("sync_shenwan_industry done, upserted=%s", total_records)
 
 
 if __name__ == "__main__":

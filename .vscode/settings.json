@@ -1,0 +1,12 @@
+{
+    "duckdb.databases": [
+        {
+            "alias": "quant",
+            "type": "file",
+            "path": "/home/james/projects/freedom/data/quant.duckdb",
+            "readOnly": true,
+            "attached": true
+        }
+    ],
+    "duckdb.defaultDatabase": "quant"
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import logging
 import sys
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from app.data.mongo_shenwan_member import (  # noqa: E402
     upsert_shenwan_members,
 )
 from app.data.tushare_client import fetch_shenwan_members  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -102,9 +105,9 @@ def _validate_member_records(records: list[dict[str, object]]) -> None:
         if in_date and out_date and str(in_date) >= str(out_date):
             invalid_date_order += 1
     if invalid_out_date:
-        print(f"warning: {invalid_out_date} records violate is_new/out_date rules")
+        logger.warning("%s records violate is_new/out_date rules", invalid_out_date)
     if invalid_date_order:
-        print(f"warning: {invalid_date_order} records have in_date >= out_date")
+        logger.warning("%s records have in_date >= out_date", invalid_date_order)
 
 
 def _sync_latest_members(
@@ -159,6 +162,10 @@ def _mark_removed_members(
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     args = parse_args()
     if not settings.tushare_token:
         raise SystemExit("TUSHARE_TOKEN is required")
@@ -173,7 +180,7 @@ def main() -> None:
         is_new=is_new,
     )
     upserted = upsert_shenwan_members(records)
-    print(f"upserted {upserted} member records")
+    logger.info("upserted member records=%s", upserted)
 
     incremental_allowed = (
         is_new == "Y"
@@ -191,9 +198,9 @@ def main() -> None:
             current_members=current_members,
             latest_members=records,
         )
-        print(f"marked removed {updated} member records")
+        logger.info("marked removed member records=%s", updated)
     elif args.incremental and not incremental_allowed:
-        print("skip incremental: only allowed when syncing full latest members (is_new=Y)")
+        logger.info("skip incremental: only allowed when syncing full latest members (is_new=Y)")
 
 
 if __name__ == "__main__":

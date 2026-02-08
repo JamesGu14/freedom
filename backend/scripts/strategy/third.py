@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 
@@ -8,6 +9,8 @@ SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
 from scripts.strategy.base_strategy import BaseStrategy  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 REQUIRED_COLUMNS = {
@@ -21,7 +24,7 @@ REQUIRED_COLUMNS = {
     "macd_dea",
     "kdj_k",
     "kdj_d",
-    "rsi",
+    "rsi12",
 }
 
 
@@ -142,7 +145,7 @@ class DailySignalModel(BaseStrategy):
             default=0.0,
         )
 
-        rsi = df["rsi"]
+        rsi = df["rsi12"]
         rsi_upturn = (rsi > rsi.shift(1)) & (rsi.shift(1) <= rsi.shift(2))
         rsi_downturn = (rsi < rsi.shift(1)) & (rsi.shift(1) >= rsi.shift(2))
 
@@ -256,7 +259,7 @@ class DailySignalModel(BaseStrategy):
         return self.df.index
 
 
-def _make_df(date, open_, high, low, close, volume, macd_dif, macd_dea, kdj_k, kdj_d, rsi):
+def _make_df(date, open_, high, low, close, volume, macd_dif, macd_dea, kdj_k, kdj_d, rsi12):
     return pd.DataFrame(
         {
             "date": date,
@@ -269,14 +272,18 @@ def _make_df(date, open_, high, low, close, volume, macd_dif, macd_dea, kdj_k, k
             "macd_dea": macd_dea,
             "kdj_k": kdj_k,
             "kdj_d": kdj_d,
-            "rsi": rsi,
+            "rsi12": rsi12,
         }
     )
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     if len(sys.argv) != 3:
-        print("Usage: python third.py <stock_code> <date>")
+        logger.error("Usage: python third.py <stock_code> <date>")
         raise SystemExit(1)
 
     stock_code = sys.argv[1]
@@ -285,7 +292,7 @@ if __name__ == "__main__":
     model = DailySignalModel(stock_code)
     signal = model.predict_date(select_date)
     cn_map = {"BUY": "买入", "SELL": "卖出", "HOLD": "不操作"}
-    print(cn_map.get(signal, "不操作"))
+    logger.info("%s", cn_map.get(signal, "不操作"))
 
 
 def test_trend_filter_up_blocks_sell():

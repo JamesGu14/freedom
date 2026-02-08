@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { apiFetch } from "../lib/api";
 
 const formatDate = (value) => {
@@ -14,6 +15,12 @@ const formatPct = (value) => {
   if (Number.isNaN(num)) return String(value);
   const prefix = num > 0 ? "+" : "";
   return `${prefix}${num.toFixed(2)}%`;
+};
+
+const formatMonthDay = (value) => {
+  if (!value || String(value).length !== 8) return "--";
+  const s = String(value);
+  return `${s.slice(4, 6)}${s.slice(6, 8)}`;
 };
 
 const getChangeClass = (value) => {
@@ -31,8 +38,19 @@ const getLevelLabel = (level) => {
   return "";
 };
 
+const normalizeSource = (value) => (value === "ci" ? "ci" : "sw");
+const normalizeLevel = (value) => {
+  const num = Number(value);
+  if (num === 1 || num === 2 || num === 3) return num;
+  return 2;
+};
+
 export default function SectorRanking() {
-  const [level, setLevel] = useState(1);
+  const router = useRouter();
+  const [source, setSource] = useState("sw");
+  const [sourceReady, setSourceReady] = useState(false);
+  const [level, setLevel] = useState(2);
+  const [levelTotals, setLevelTotals] = useState({});
   const [historyData, setHistoryData] = useState([]);
   const [avgData, setAvgData] = useState({
     trade_dates: [],
@@ -44,12 +62,22 @@ export default function SectorRanking() {
   const [error, setError] = useState("");
 
   const topBottomN = useMemo(() => (level === 1 ? 5 : 10), [level]);
+  const sourceLabel = source === "ci" ? "中信板块排名" : "申万板块排名";
+  const dayLabels = useMemo(
+    () => [0, 1, 2, 3, 4].map((idx) => formatMonthDay(avgData.trade_dates[idx])),
+    [avgData.trade_dates]
+  );
+  const getSectorHref = useCallback(
+    (tsCode) => (source === "ci" ? `/citic-sectors/${tsCode}` : `/sectors/${tsCode}`),
+    [source]
+  );
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams();
+      params.set("source", source);
       params.set("days", "5");
       params.set("level", String(level));
       params.set("top_n", String(topBottomN));
@@ -64,12 +92,13 @@ export default function SectorRanking() {
     } finally {
       setLoading(false);
     }
-  }, [level, topBottomN]);
+  }, [source, level, topBottomN]);
 
   const loadAvg = useCallback(async () => {
     setAvgLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set("source", source);
       params.set("level", String(level));
       params.set("top_n", "10");
       params.set("bottom_n", "10");
@@ -86,13 +115,74 @@ export default function SectorRanking() {
     } finally {
       setAvgLoading(false);
     }
-  }, [level]);
+  }, [source, level]);
+
+  const loadLevelTotals = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set("source", source);
+      const res = await apiFetch(`/sector-ranking/level-totals?${params.toString()}`);
+      if (!res.ok) throw new Error(`加载失败: ${res.status}`);
+      const data = await res.json();
+      const mapping = {};
+      for (const item of data.levels || []) {
+        mapping[item.level] = item.member_total ?? 0;
+      }
+      setLevelTotals(mapping);
+    } catch (err) {
+      setLevelTotals({});
+    }
+  }, [source]);
 
   useEffect(() => {
+    if (!router.isReady) return;
+    const querySource = Array.isArray(router.query.source)
+      ? router.query.source[0]
+      : router.query.source;
+    const queryLevel = Array.isArray(router.query.level)
+      ? router.query.level[0]
+      : router.query.level;
+    setSource(normalizeSource(querySource));
+    setLevel(normalizeLevel(queryLevel));
+    setSourceReady(true);
+  }, [router.isReady, router.query.source, router.query.level]);
+
+  useEffect(() => {
+    if (!router.isReady || !sourceReady) return;
+    const querySource = Array.isArray(router.query.source)
+      ? router.query.source[0]
+      : router.query.source;
+    const queryLevel = Array.isArray(router.query.level)
+      ? router.query.level[0]
+      : router.query.level;
+    const sourceEqual = normalizeSource(querySource) === source;
+    const levelEqual = normalizeLevel(queryLevel) === level;
+    if (sourceEqual && levelEqual && String(queryLevel || "") === String(level)) return;
+    router.replace(
+      {
+        pathname: router.pathname,
+        query: {
+          ...router.query,
+          source,
+          level: String(level),
+        },
+      },
+      undefined,
+      { shallow: true }
+    );
+  }, [router, source, level, sourceReady]);
+
+  useEffect(() => {
+    if (!sourceReady) return;
     loadHistory();
     loadAvg();
-  }, [loadHistory, loadAvg]);
+    loadLevelTotals();
+  }, [loadHistory, loadAvg, loadLevelTotals, sourceReady]);
 
+  const sourceOptions = [
+    { value: "sw", label: "申万板块排名" },
+    { value: "ci", label: "中信板块排名" },
+  ];
   const levelOptions = [1, 2, 3];
   const latestDate = historyData[0]?.trade_date;
 
@@ -101,22 +191,37 @@ export default function SectorRanking() {
       <header className="header ranking-header">
         <div>
           <p className="eyebrow">Quant Platform</p>
-          <h1>板块排名</h1>
+          <h1>{sourceLabel}</h1>
           <p className="subtitle">
             {getLevelLabel(level)}涨跌幅排名（最近 5 个交易日）
           </p>
         </div>
-        <div className="ranking-controls">
-          {levelOptions.map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={`level-tab ${level === item ? "active" : ""}`}
-              onClick={() => setLevel(item)}
-            >
-              {getLevelLabel(item)}
-            </button>
-          ))}
+        <div>
+          <div className="ranking-controls">
+            {sourceOptions.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={`level-tab ${source === item.value ? "active" : ""}`}
+                onClick={() => setSource(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="ranking-controls source-level-controls">
+            {levelOptions.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={`level-tab ${level === item ? "active" : ""}`}
+                onClick={() => setLevel(item)}
+              >
+                <span>{getLevelLabel(item)}</span>
+                <span className="level-tab-meta">member {levelTotals[item] ?? "-"}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -152,7 +257,7 @@ export default function SectorRanking() {
                         <span className="ranking-rank">{item.rank ?? "-"}</span>
                         <Link
                           className="ranking-name"
-                          href={`/sectors/${item.ts_code}`}
+                          href={getSectorHref(item.ts_code)}
                         >
                           {item.name || item.ts_code}
                         </Link>
@@ -172,7 +277,7 @@ export default function SectorRanking() {
                         <span className="ranking-rank">{item.rank ?? "-"}</span>
                         <Link
                           className="ranking-name"
-                          href={`/sectors/${item.ts_code}`}
+                          href={getSectorHref(item.ts_code)}
                         >
                           {item.name || item.ts_code}
                         </Link>
@@ -215,11 +320,11 @@ export default function SectorRanking() {
                     <th>排名</th>
                     <th>板块</th>
                     <th className="th-numeric">平均</th>
-                    <th className="th-numeric">D1</th>
-                    <th className="th-numeric">D2</th>
-                    <th className="th-numeric">D3</th>
-                    <th className="th-numeric">D4</th>
-                    <th className="th-numeric">D5</th>
+                    <th className="th-numeric">{dayLabels[0]}</th>
+                    <th className="th-numeric">{dayLabels[1]}</th>
+                    <th className="th-numeric">{dayLabels[2]}</th>
+                    <th className="th-numeric">{dayLabels[3]}</th>
+                    <th className="th-numeric">{dayLabels[4]}</th>
                     <th className="th-numeric">5日累计</th>
                   </tr>
                 </thead>
@@ -237,7 +342,7 @@ export default function SectorRanking() {
                         <td>
                           <Link
                             className="ranking-name"
-                            href={`/sectors/${item.ts_code}`}
+                            href={getSectorHref(item.ts_code)}
                           >
                             {item.name || item.ts_code}
                           </Link>
@@ -272,11 +377,11 @@ export default function SectorRanking() {
                     <th>排名</th>
                     <th>板块</th>
                     <th className="th-numeric">平均</th>
-                    <th className="th-numeric">D1</th>
-                    <th className="th-numeric">D2</th>
-                    <th className="th-numeric">D3</th>
-                    <th className="th-numeric">D4</th>
-                    <th className="th-numeric">D5</th>
+                    <th className="th-numeric">{dayLabels[0]}</th>
+                    <th className="th-numeric">{dayLabels[1]}</th>
+                    <th className="th-numeric">{dayLabels[2]}</th>
+                    <th className="th-numeric">{dayLabels[3]}</th>
+                    <th className="th-numeric">{dayLabels[4]}</th>
                     <th className="th-numeric">5日累计</th>
                   </tr>
                 </thead>
@@ -294,7 +399,7 @@ export default function SectorRanking() {
                         <td>
                           <Link
                             className="ranking-name"
-                            href={`/sectors/${item.ts_code}`}
+                            href={getSectorHref(item.ts_code)}
                           >
                             {item.name || item.ts_code}
                           </Link>

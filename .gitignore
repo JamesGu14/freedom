@@ -4,6 +4,11 @@ node_modules/
 .next/
 *.zip
 data/
+!backend/app/data/
+backend/app/data/*
+!backend/app/data/mongo_citic.py
+!backend/app/data/mongo_citic_daily.py
+!backend/app/data/mongo_market_index.py
 nohup.out
 
 # Byte-compiled / optimized / DLL files
@@ -11,6 +16,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 bak/
+logs/
 
 # C extensions
 *.so

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import logging
 import sys
 import time
 from pathlib import Path
 
 import pandas as pd
+from tqdm import tqdm
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
@@ -17,6 +19,8 @@ from app.data.mongo_shenwan import list_shenwan_industry  # noqa: E402
 from app.data.mongo_shenwan_daily import upsert_shenwan_daily  # noqa: E402
 from app.data.mongo_trade_calendar import is_trading_day  # noqa: E402
 from app.data.tushare_client import fetch_shenwan_daily  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,7 +115,7 @@ def _pick_fields(row: dict[str, object]) -> dict[str, object]:
 def sync_trade_date(trade_date: str, level_map: dict[str, int]) -> int:
     df = fetch_shenwan_daily(trade_date=trade_date)
     if df is None or df.empty:
-        print(f"{trade_date} no data returned")
+        logger.debug("%s no shenwan daily data returned", trade_date)
         return 0
 
     df["trade_date"] = df.get("trade_date", trade_date)
@@ -132,11 +136,15 @@ def sync_trade_date(trade_date: str, level_map: dict[str, int]) -> int:
         records.append(record)
 
     inserted = upsert_shenwan_daily(records)
-    print(f"{trade_date} upserted {inserted} records")
+    logger.debug("%s upserted %s records", trade_date, inserted)
     return inserted
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     args = parse_args()
     if not settings.tushare_token:
         raise SystemExit("TUSHARE_TOKEN is required")
@@ -155,19 +163,31 @@ def main() -> None:
 
     level_map = _build_level_map()
     if not level_map:
-        print("warning: shenwan_industry level map is empty")
+        logger.warning("shenwan_industry level map is empty")
 
-    for idx, trade_date in enumerate(date_list, start=1):
+    total_upserted = 0
+    skipped_non_trading = 0
+    progress = tqdm(date_list, total=len(date_list), desc="sync_shenwan_daily", unit="day", dynamic_ncols=True)
+    for idx, trade_date in enumerate(progress, start=1):
         try:
-            print(f"[{idx}/{len(date_list)}] syncing {trade_date} ...")
             if not is_trading_day(trade_date):
-                print(f"[{idx}/{len(date_list)}] {trade_date} not trading day, skip")
+                skipped_non_trading += 1
+                progress.set_postfix(date=trade_date, status="skip")
                 continue
-            sync_trade_date(trade_date, level_map)
+            inserted = sync_trade_date(trade_date, level_map)
+            total_upserted += inserted
+            progress.set_postfix(date=trade_date, upserted=inserted, total=total_upserted)
         except Exception as exc:
-            print(f"[{idx}/{len(date_list)}] {trade_date} failed: {exc}")
+            logger.exception("[%s/%s] %s failed: %s", idx, len(date_list), trade_date, exc)
         if args.sleep > 0:
             time.sleep(args.sleep)
+
+    logger.info(
+        "sync_shenwan_daily done: days=%s skipped_non_trading=%s upserted=%s",
+        len(date_list),
+        skipped_non_trading,
+        total_upserted,
+    )
 
 
 if __name__ == "__main__":

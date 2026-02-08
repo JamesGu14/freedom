@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import logging
 import time
 from pathlib import Path
 import sys
@@ -19,6 +20,8 @@ from app.data.duckdb_store import (
     upsert_daily_limit,
 )
 from app.data.mongo_stock import list_stock_codes
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,6 +42,10 @@ def load_stock_list() -> list[str]:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     args = parse_args()
 
     token = "e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e"
@@ -69,7 +76,7 @@ def main() -> None:
 
         # Check if stock data already exists using DuckDB
         if has_stock_data(ts_code):
-            print(f"[{idx}/{len(stock_list)}] {ts_code} skipped (data exists)")
+            logger.info("[%s/%s] %s skipped (data exists)", idx, len(stock_list), ts_code)
             continue
 
         try:
@@ -100,12 +107,32 @@ def main() -> None:
 
             stock_elapsed = time.perf_counter() - stock_start
             if total_inserted == 0:
-                print(f"[{idx}/{len(stock_list)}] {ts_code} no data elapsed={stock_elapsed:.2f}s")
+                logger.info(
+                    "[%s/%s] %s no data elapsed=%.2fs",
+                    idx,
+                    len(stock_list),
+                    ts_code,
+                    stock_elapsed,
+                )
             else:
-                print(f"[{idx}/{len(stock_list)}] {ts_code} daily={total_inserted} elapsed={stock_elapsed:.2f}s")
+                logger.info(
+                    "[%s/%s] %s daily=%s elapsed=%.2fs",
+                    idx,
+                    len(stock_list),
+                    ts_code,
+                    total_inserted,
+                    stock_elapsed,
+                )
         except Exception as exc:
             stock_elapsed = time.perf_counter() - stock_start
-            print(f"[{idx}/{len(stock_list)}] {ts_code} failed: {exc} elapsed={stock_elapsed:.2f}s")
+            logger.exception(
+                "[%s/%s] %s failed elapsed=%.2fs: %s",
+                idx,
+                len(stock_list),
+                ts_code,
+                stock_elapsed,
+                exc,
+            )
         time.sleep(args.sleep)
 
 

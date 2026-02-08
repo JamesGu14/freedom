@@ -37,10 +37,25 @@ const normalizeAdjRows = (rows) => {
   return Array.from(map.values());
 };
 
+const OSCILLATOR_OPTIONS = [
+  { key: "rsi", label: "RSI" },
+  { key: "kdj", label: "KDJ" },
+  { key: "wr", label: "WR" },
+  { key: "cci", label: "CCI" },
+  { key: "atr", label: "ATR" },
+];
+
+const OSCILLATOR_LABEL_MAP = {
+  rsi: "RSI",
+  kdj: "KDJ",
+  wr: "WR",
+  cci: "CCI",
+  atr: "ATR",
+};
+
 export default function StockKline() {
   const router = useRouter();
   const { ts_code: tsCode } = router.query;
-  const debugId = useRef(Math.random().toString(36).slice(2, 8));
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
 
@@ -57,6 +72,7 @@ export default function StockKline() {
   const [chartError, setChartError] = useState("");
   const [backHref, setBackHref] = useState("/");
   const [chartReady, setChartReady] = useState(false);
+  const [oscillatorMode, setOscillatorMode] = useState("rsi");
 
   const setChartEl = useCallback((el) => {
     chartRef.current = el;
@@ -172,8 +188,6 @@ export default function StockKline() {
       // 等待容器完成布局后再 setOption，避免宽高为 0 导致不绘制
       await new Promise((r) => requestAnimationFrame(r));
       if (!mounted || !chartInstanceRef.current) return;
-      console.log("[KLINE]", debugId.current, "setOption...");
-
       const toNum = (v) => {
         if (v == null || v === "") return null;
         const n = Number(v);
@@ -192,7 +206,6 @@ export default function StockKline() {
         const { open: o, close: c, low: l, high: h } = ohlc(item);
         return [o ?? 0, c ?? 0, l ?? 0, h ?? 0];
       });
-      const volumes = sortedDaily.map((item) => ohlc(item).vol ?? 0);
 
       // Create indicator map for quick lookup（key 统一为字符串，避免 number/string 不一致）
       const indicatorMap = new Map();
@@ -208,6 +221,20 @@ export default function StockKline() {
       const ma10Values = sortedDaily.map((item) => getInd(item)?.ma10 ?? null);
       const ma20Values = sortedDaily.map((item) => getInd(item)?.ma20 ?? null);
       const ma30Values = sortedDaily.map((item) => getInd(item)?.ma30 ?? null);
+      const ma60Values = sortedDaily.map((item) => getInd(item)?.ma60 ?? null);
+      const ma90Values = sortedDaily.map((item) => getInd(item)?.ma90 ?? null);
+      const ma250Values = sortedDaily.map((item) => getInd(item)?.ma250 ?? null);
+      const bollUpperValues = sortedDaily.map((item) => getInd(item)?.boll_upper ?? null);
+      const bollMiddleValues = sortedDaily.map((item) => getInd(item)?.boll_middle ?? null);
+      const bollLowerValues = sortedDaily.map((item) => getInd(item)?.boll_lower ?? null);
+      // Get RSI values
+      const rsi6Values = sortedDaily.map((item) => getInd(item)?.rsi6 ?? null);
+      const rsi12Values = sortedDaily.map((item) => getInd(item)?.rsi12 ?? null);
+      const rsi24Values = sortedDaily.map((item) => getInd(item)?.rsi24 ?? null);
+      const wr14Values = sortedDaily.map((item) => getInd(item)?.wr ?? null);
+      const wr28Values = sortedDaily.map((item) => getInd(item)?.wr1 ?? null);
+      const cciValues = sortedDaily.map((item) => getInd(item)?.cci ?? null);
+      const atrValues = sortedDaily.map((item) => getInd(item)?.atr ?? null);
       // Get KDJ values
       const kdjKValues = sortedDaily.map((item) => getInd(item)?.kdj_k ?? null);
       const kdjDValues = sortedDaily.map((item) => getInd(item)?.kdj_d ?? null);
@@ -228,17 +255,173 @@ export default function StockKline() {
       const totalCount = sortedDaily.length;
       const startIndex = Math.max(totalCount - 120, 0);
       const startPercent = totalCount > 1 ? (startIndex / (totalCount - 1)) * 100 : 0;
+      const oscillatorLabel = OSCILLATOR_LABEL_MAP[oscillatorMode] || "RSI";
+
+      let oscillatorAxis = {
+        gridIndex: 2,
+        scale: true,
+        axisLabel: { color: "#999999" },
+        splitLine: { lineStyle: { color: "#333333" } },
+      };
+      if (oscillatorMode === "rsi") {
+        oscillatorAxis = {
+          gridIndex: 2,
+          min: 0,
+          max: 100,
+          axisLabel: { color: "#999999" },
+          splitLine: { lineStyle: { color: "#333333" } },
+        };
+      } else if (oscillatorMode === "wr") {
+        oscillatorAxis = {
+          gridIndex: 2,
+          min: -100,
+          max: 0,
+          axisLabel: { color: "#999999" },
+          splitLine: { lineStyle: { color: "#333333" } },
+        };
+      }
+
+      let oscillatorSeries = [];
+      if (oscillatorMode === "rsi") {
+        oscillatorSeries = [
+          {
+            name: "RSI6",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: rsi6Values,
+            smooth: false,
+            lineStyle: { color: "#eab308", width: 1 },
+            symbol: "none",
+          },
+          {
+            name: "RSI12",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: rsi12Values,
+            smooth: false,
+            lineStyle: { color: "#60a5fa", width: 1 },
+            symbol: "none",
+          },
+          {
+            name: "RSI24",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: rsi24Values,
+            smooth: false,
+            lineStyle: { color: "#f43f5e", width: 1 },
+            symbol: "none",
+          },
+        ];
+      } else if (oscillatorMode === "kdj") {
+        oscillatorSeries = [
+          {
+            name: "KDJ-K",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: kdjKValues,
+            smooth: false,
+            lineStyle: { color: "#ff69b4", width: 1 },
+            symbol: "none",
+          },
+          {
+            name: "KDJ-D",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: kdjDValues,
+            smooth: false,
+            lineStyle: { color: "#4169e1", width: 1 },
+            symbol: "none",
+          },
+          {
+            name: "KDJ-J",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: kdjJValues,
+            smooth: false,
+            lineStyle: { color: "#ffff00", width: 1 },
+            symbol: "none",
+          },
+        ];
+      } else if (oscillatorMode === "wr") {
+        oscillatorSeries = [
+          {
+            name: "WR14",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: wr14Values,
+            smooth: false,
+            lineStyle: { color: "#34d399", width: 1 },
+            symbol: "none",
+          },
+          {
+            name: "WR28",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: wr28Values,
+            smooth: false,
+            lineStyle: { color: "#f472b6", width: 1 },
+            symbol: "none",
+          },
+        ];
+      } else if (oscillatorMode === "cci") {
+        oscillatorSeries = [
+          {
+            name: "CCI",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: cciValues,
+            smooth: false,
+            lineStyle: { color: "#f59e0b", width: 1 },
+            symbol: "none",
+          },
+        ];
+      } else if (oscillatorMode === "atr") {
+        oscillatorSeries = [
+          {
+            name: "ATR",
+            type: "line",
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: atrValues,
+            smooth: false,
+            lineStyle: { color: "#22d3ee", width: 1 },
+            symbol: "none",
+          },
+        ];
+      }
 
       chartInstanceRef.current.setOption(
         {
           backgroundColor: "#000000",
           animation: false,
           grid: [
-            { left: 40, right: 20, top: 30, height: 280 },
-            { left: 40, right: 20, top: 330, height: 90 },
-            { left: 40, right: 20, top: 450, height: 180 },
-            { left: 40, right: 20, top: 660, height: 180 },
+            { left: 40, right: 20, top: 30, height: 300 },
+            { left: 40, right: 20, top: 350, height: 90 },
+            { left: 40, right: 20, top: 470, height: 170 },
+            { left: 40, right: 20, top: 670, height: 190 },
           ],
+          legend: {
+            top: 4,
+            left: 44,
+            textStyle: { color: "#999999", fontSize: 11 },
+            itemWidth: 10,
+            itemHeight: 6,
+            selected: {
+              MA90: false,
+              MA250: false,
+              "BOLL-UP": false,
+              "BOLL-DN": false,
+            },
+          },
           tooltip: {
             trigger: "axis",
             formatter: (params) => {
@@ -249,6 +432,11 @@ export default function StockKline() {
                 if (val == null || val === "") return "-";
                 const num = typeof val === "number" ? val : parseFloat(val);
                 return isNaN(num) ? "-" : num.toFixed(4);
+              };
+              const formatPct = (val) => {
+                if (val == null || val === "" || Number.isNaN(val)) return "-";
+                const prefix = val > 0 ? "+" : "";
+                return `${prefix}${val.toFixed(2)}%`;
               };
               const index = params[0].dataIndex;
               const date = dates[index];
@@ -261,53 +449,24 @@ export default function StockKline() {
                 const c = item.close ?? item.close_price;
                 const l = item.low ?? item.low_price;
                 const h = item.high ?? item.high_price;
+                const prevClose =
+                  item.pre_close ??
+                  item.preclose ??
+                  item.prev_close ??
+                  (index > 0
+                    ? sortedDaily[index - 1]?.close ?? sortedDaily[index - 1]?.close_price
+                    : null);
+                const pct =
+                  prevClose && Number(prevClose) > 0 && c != null
+                    ? ((Number(c) - Number(prevClose)) / Number(prevClose)) * 100
+                    : null;
+                lines.push(`涨跌幅: ${formatPct(pct)}`);
                 lines.push(
                   `开盘: ${formatNumber(o)}`,
                   `收盘: ${formatNumber(c)}`,
                   `最低: ${formatNumber(l)}`,
                   `最高: ${formatNumber(h)}`
                 );
-              }
-
-              // MA数据
-              const ma5 = params.find((item) => item.seriesName === "MA5");
-              const ma10 = params.find((item) => item.seriesName === "MA10");
-              const ma20 = params.find((item) => item.seriesName === "MA20");
-              const ma30 = params.find((item) => item.seriesName === "MA30");
-              if (ma5 || ma10 || ma20 || ma30) {
-                lines.push("");
-                if (ma5) lines.push(`MA5: ${formatNumber(ma5.value)}`);
-                if (ma10) lines.push(`MA10: ${formatNumber(ma10.value)}`);
-                if (ma20) lines.push(`MA20: ${formatNumber(ma20.value)}`);
-                if (ma30) lines.push(`MA30: ${formatNumber(ma30.value)}`);
-              }
-
-              // 成交量
-              const volume = params.find((item) => item.seriesName === "成交量");
-              if (volume) {
-                lines.push(`成交量: ${formatNumber(volume.value)}`);
-              }
-
-              // KDJ数据
-              const kdjK = params.find((item) => item.seriesName === "KDJ-K");
-              const kdjD = params.find((item) => item.seriesName === "KDJ-D");
-              const kdjJ = params.find((item) => item.seriesName === "KDJ-J");
-              if (kdjK || kdjD || kdjJ) {
-                lines.push("");
-                if (kdjK) lines.push(`KDJ-K: ${formatNumber(kdjK.value)}`);
-                if (kdjD) lines.push(`KDJ-D: ${formatNumber(kdjD.value)}`);
-                if (kdjJ) lines.push(`KDJ-J: ${formatNumber(kdjJ.value)}`);
-              }
-
-              // MACD数据
-              const macd = params.find((item) => item.seriesName === "MACD");
-              const macdSignal = params.find((item) => item.seriesName === "MACD-Signal");
-              const macdHist = params.find((item) => item.seriesName === "MACD-Hist");
-              if (macd || macdSignal || macdHist) {
-                lines.push("");
-                if (macd) lines.push(`MACD: ${formatNumber(macd.value)}`);
-                if (macdSignal) lines.push(`MACD-Signal: ${formatNumber(macdSignal.value)}`);
-                if (macdHist) lines.push(`MACD-Hist: ${formatNumber(macdHist.value)}`);
               }
 
               return lines.join("<br/>");
@@ -355,16 +514,14 @@ export default function StockKline() {
             },
             {
               gridIndex: 1,
+              scale: true,
               axisLabel: { color: "#999999" },
               splitLine: { show: false },
             },
-            {
-              gridIndex: 2,
-              axisLabel: { color: "#999999" },
-              splitLine: { lineStyle: { color: "#333333" } },
-            },
+            oscillatorAxis,
             {
               gridIndex: 3,
+              scale: true,
               axisLabel: { color: "#999999" },
               splitLine: { lineStyle: { color: "#333333" } },
             },
@@ -389,9 +546,9 @@ export default function StockKline() {
             {
               type: "text",
               left: 50,
-              top: 452,
+              top: 472,
               style: {
-                text: "KDJ",
+                text: oscillatorLabel,
                 fontSize: 14,
                 fontWeight: "bold",
                 fill: "#ffffff",
@@ -400,7 +557,7 @@ export default function StockKline() {
             {
               type: "text",
               left: 50,
-              top: 662,
+              top: 672,
               style: {
                 text: "MACD",
                 fontSize: 14,
@@ -467,52 +624,82 @@ export default function StockKline() {
               symbol: "none",
             },
             {
+              name: "MA60",
+              type: "line",
+              data: ma60Values,
+              smooth: false,
+              lineStyle: {
+                color: "#f97316",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "MA90",
+              type: "line",
+              data: ma90Values,
+              smooth: false,
+              lineStyle: {
+                color: "#22d3ee",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "MA250",
+              type: "line",
+              data: ma250Values,
+              smooth: false,
+              lineStyle: {
+                color: "#9ca3af",
+                width: 1,
+              },
+              symbol: "none",
+            },
+            {
+              name: "BOLL-UP",
+              type: "line",
+              data: bollUpperValues,
+              smooth: false,
+              lineStyle: {
+                color: "#14b8a6",
+                width: 1,
+                type: "dashed",
+              },
+              symbol: "none",
+            },
+            {
+              name: "BOLL-MID",
+              type: "line",
+              data: bollMiddleValues,
+              smooth: false,
+              lineStyle: {
+                color: "#a3e635",
+                width: 1,
+                type: "dashed",
+              },
+              symbol: "none",
+            },
+            {
+              name: "BOLL-DN",
+              type: "line",
+              data: bollLowerValues,
+              smooth: false,
+              lineStyle: {
+                color: "#fb7185",
+                width: 1,
+                type: "dashed",
+              },
+              symbol: "none",
+            },
+            {
               name: "成交量",
               type: "bar",
               xAxisIndex: 1,
               yAxisIndex: 1,
               data: volumeBars,
             },
-            // KDJ指标
-            {
-              name: "KDJ-K",
-              type: "line",
-              xAxisIndex: 2,
-              yAxisIndex: 2,
-              data: kdjKValues,
-              smooth: false,
-              lineStyle: {
-                color: "#ff69b4",
-                width: 1,
-              },
-              symbol: "none",
-            },
-            {
-              name: "KDJ-D",
-              type: "line",
-              xAxisIndex: 2,
-              yAxisIndex: 2,
-              data: kdjDValues,
-              smooth: false,
-              lineStyle: {
-                color: "#4169e1",
-                width: 1,
-              },
-              symbol: "none",
-            },
-            {
-              name: "KDJ-J",
-              type: "line",
-              xAxisIndex: 2,
-              yAxisIndex: 2,
-              data: kdjJValues,
-              smooth: false,
-              lineStyle: {
-                color: "#ffff00",
-                width: 1,
-              },
-              symbol: "none",
-            },
+            ...oscillatorSeries,
             // MACD指标
             {
               name: "MACD",
@@ -545,12 +732,16 @@ export default function StockKline() {
               type: "bar",
               xAxisIndex: 3,
               yAxisIndex: 3,
-              data: macdHistValues.map((val) => ({
-                value: val,
-                itemStyle: {
-                  color: val >= 0 ? "#22c55e" : "#ef4444",
-                },
-              })),
+              data: macdHistValues.map((val) =>
+                val == null
+                  ? null
+                  : {
+                      value: val,
+                      itemStyle: {
+                        color: val >= 0 ? "#22c55e" : "#ef4444",
+                      },
+                    }
+              ),
             },
           ],
         },
@@ -571,7 +762,7 @@ export default function StockKline() {
     return () => {
       mounted = false;
     };
-  }, [sortedDaily, displayAdj, adjMap, indicators, chartReady]);
+  }, [sortedDaily, displayAdj, adjMap, indicators, chartReady, oscillatorMode]);
 
   useEffect(() => {
     if (!chartInstanceRef.current || sortedDaily.length === 0) return;
@@ -692,6 +883,19 @@ export default function StockKline() {
           </div>
         ) : (
           <>
+            <div className="indicator-switcher">
+              <span className="indicator-switcher-label">副图指标</span>
+              {OSCILLATOR_OPTIONS.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  className={`indicator-switcher-btn ${oscillatorMode === option.key ? "active" : ""}`}
+                  onClick={() => setOscillatorMode(option.key)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <div className="chart-canvas" ref={setChartEl} />
             <div className="adj-table">
               <h3>复权因子（最近120天）</h3>

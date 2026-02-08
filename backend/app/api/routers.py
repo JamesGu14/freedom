@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends
 from app.api.routes import (
     auth_router,
     backtests_router,
+    citic_sectors_router,
     daily_signals_router,
     health_router,
+    market_index_router,
     signal_router,
     sector_ranking_router,
     shenwan_industry_router,
@@ -38,6 +40,16 @@ router.include_router(
 router.include_router(
     shenwan_industry_router,
     tags=["shenwan_industry"],
+    dependencies=[Depends(get_current_user)],
+)
+router.include_router(
+    citic_sectors_router,
+    tags=["citic_sectors"],
+    dependencies=[Depends(get_current_user)],
+)
+router.include_router(
+    market_index_router,
+    tags=["market_index"],
     dependencies=[Depends(get_current_user)],
 )
 router.include_router(

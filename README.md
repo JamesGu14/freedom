@@ -100,13 +100,16 @@ DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/
 **indicators**（技术指标特征）
 
 - 路径：`data/features/indicators/ts_code=<ts_code>/year=<YYYY>/part-*.parquet`
-- 字段（由 `scripts/one_time/calculate_indicators.py` 生成）：
+- 字段（由 `scripts/daily/sync_stk_factor_pro.py` 同步）：
   - `ts_code`, `trade_date` (str, YYYYMMDD)
-  - `ma5`, `ma10`, `ma20`, `ma30`, `ma60`, `ma120`, `ma200`, `ma250`, `ma500`
+  - `close_qfq`
+  - `ma5`, `ma10`, `ma20`, `ma30`, `ma60`, `ma90`, `ma250`
   - `macd`, `macd_signal`, `macd_hist`
-  - `rsi`
+  - `rsi6`, `rsi12`, `rsi24`
   - `kdj_k`, `kdj_d`, `kdj_j`
   - `boll_upper`, `boll_middle`, `boll_lower`
+  - `atr`, `cci`, `wr`, `wr1`, `updays`, `downdays`
+  - `pe`, `pe_ttm`, `pb`, `turnover_rate`, `turnover_rate_f`, `volume_ratio`
 
 ---
 
