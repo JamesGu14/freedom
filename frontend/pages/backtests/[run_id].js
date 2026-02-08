@@ -208,12 +208,15 @@ export default function BacktestDetailPage() {
   const exposureChartInstanceRef = useRef(null);
   const holdingsSummaryRef = useRef(null);
   const holdingsTooltipRef = useRef(null);
+  const holdingsModalRef = useRef(null);
+  const tooltipContainerRef = useRef(null);
   const tradesCacheRef = useRef(new Map());
 
   const [detail, setDetail] = useState(null);
   const [navItems, setNavItems] = useState([]);
   const [benchmarkItems, setBenchmarkItems] = useState([]);
   const [holdingsSummary, setHoldingsSummary] = useState([]);
+  const [holdingsModalOpen, setHoldingsModalOpen] = useState(false);
   const [tradeTooltip, setTradeTooltip] = useState({
     visible: false,
     loading: false,
@@ -325,14 +328,16 @@ export default function BacktestDetailPage() {
   }, [runId]);
 
   const showTradeTooltip = useCallback(
-    async (event, item) => {
-      if (!holdingsSummaryRef.current) return;
+    async (event, item, containerEl) => {
+      const container = containerEl || holdingsSummaryRef.current;
+      if (!container) return;
       const tsCode = String(item.ts_code || "").trim();
       if (!tsCode) return;
       const cacheKey = tsCode;
-      const containerRect = holdingsSummaryRef.current.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
       const mouseX = event.clientX - containerRect.left;
       const mouseY = event.clientY - containerRect.top;
+      tooltipContainerRef.current = container;
       const x = mouseX + 12;
       const y = mouseY + 12;
 
@@ -391,8 +396,9 @@ export default function BacktestDetailPage() {
 
   const moveTradeTooltip = useCallback(
     (event) => {
-      if (!holdingsSummaryRef.current) return;
-      const containerRect = holdingsSummaryRef.current.getBoundingClientRect();
+      const container = tooltipContainerRef.current || holdingsSummaryRef.current;
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
       const mouseX = event.clientX - containerRect.left;
       const mouseY = event.clientY - containerRect.top;
       setTradeTooltip((prev) =>
@@ -403,8 +409,9 @@ export default function BacktestDetailPage() {
   );
 
   useEffect(() => {
-    if (!tradeTooltip.visible || !holdingsTooltipRef.current || !holdingsSummaryRef.current) return;
-    const containerRect = holdingsSummaryRef.current.getBoundingClientRect();
+    const container = tooltipContainerRef.current || holdingsSummaryRef.current;
+    if (!tradeTooltip.visible || !holdingsTooltipRef.current || !container) return;
+    const containerRect = container.getBoundingClientRect();
     const tooltipRect = holdingsTooltipRef.current.getBoundingClientRect();
     let nextX = tradeTooltip.x;
     let nextY = tradeTooltip.y;
@@ -505,14 +512,7 @@ export default function BacktestDetailPage() {
     <main className="page">
       <header className="header">
         <div>
-          <p className="eyebrow">Backtest Detail</p>
-          <h1>{runId || "回测详情"}</h1>
-          <p className="subtitle" style={{ marginTop: 6, marginBottom: 6 }}>
-            命令:{" "}
-            <code>
-              python backend/scripts/backtest/run_backtest.py --run-id {runId || "xxxxxx"}
-            </code>
-          </p>
+          <h1>回测: {runId || "-"}</h1>
           <p className="subtitle">
             {detail
               ? `${detail.strategy_id || "-"} / ${detail.strategy_version_id || "-"} / ${
@@ -522,40 +522,44 @@ export default function BacktestDetailPage() {
           </p>
         </div>
         <div className="header-actions">
-          <Link className="primary" href="/backtests">
-            返回回测列表
+          <Link className="link-button" href="/backtests">
+            返回列表
           </Link>
         </div>
       </header>
 
       {error ? <div className="error">{error}</div> : null}
 
-      <section className="filters" style={{ marginBottom: 20 }}>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>
-            累计收益
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>{formatPct(summary.total_return)}</div>
+      <div className="kpi-row">
+        <div className="kpi-tile">
+          <div className="kpi-tile__label">累计收益</div>
+          <div className="kpi-tile__value">{formatPct(summary.total_return)}</div>
         </div>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>
-            交易次数
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>{summary.trade_count ?? "-"}</div>
+        <div className="kpi-tile">
+          <div className="kpi-tile__label">最大回撤</div>
+          <div className="kpi-tile__value">{formatPct(summary.max_drawdown)}</div>
         </div>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>
-            胜率
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>{formatPct(summary.win_rate)}</div>
+        <div className="kpi-tile">
+          <div className="kpi-tile__label">胜率</div>
+          <div className="kpi-tile__value">{formatPct(summary.win_rate)}</div>
         </div>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>
-            状态
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>{detail?.status || "-"}</div>
+        <div className="kpi-tile">
+          <div className="kpi-tile__label">交易次数</div>
+          <div className="kpi-tile__value">{summary.trade_count ?? "-"}</div>
         </div>
-      </section>
+        <div className="kpi-tile">
+          <div className="kpi-tile__label">年化收益</div>
+          <div className="kpi-tile__value">{formatPct(summary.annual_return)}</div>
+        </div>
+        <div className="kpi-tile">
+          <div className="kpi-tile__label">夏普比率</div>
+          <div className="kpi-tile__value">{formatNum(summary.sharpe_ratio, 2)}</div>
+        </div>
+        <div className="kpi-tile">
+          <div className="kpi-tile__label">状态</div>
+          <div className="kpi-tile__value" style={{ fontSize: 14 }}>{detail?.status || "-"}</div>
+        </div>
+      </div>
 
       <section className="panel" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>回测结果</h3>
@@ -585,7 +589,15 @@ export default function BacktestDetailPage() {
                 onMouseLeave={hideTradeTooltip}
                 onMouseMove={moveTradeTooltip}
               >
-                <div className="holdings-summary-title">持有过的股票（最终收益）</div>
+                <div className="holdings-summary-title">
+                  <button
+                    type="button"
+                    className="link-button holdings-summary-title-btn"
+                    onClick={() => setHoldingsModalOpen(true)}
+                  >
+                    持有过的股票（最终收益）
+                  </button>
+                </div>
                 {holdingsSummary.length === 0 ? (
                   <div className="holdings-summary-empty">暂无数据</div>
                 ) : (
@@ -594,7 +606,7 @@ export default function BacktestDetailPage() {
                       <div
                         key={item.ts_code}
                         className="holdings-summary-row"
-                        onMouseEnter={(event) => showTradeTooltip(event, item)}
+                        onMouseEnter={(event) => showTradeTooltip(event, item, holdingsSummaryRef.current)}
                       >
                         <span className="holdings-summary-code">{item.ts_code}</span>
                         <span className="holdings-summary-name">{item.stock_name || "-"}</span>
@@ -604,7 +616,7 @@ export default function BacktestDetailPage() {
                     ))}
                   </div>
                 )}
-                {tradeTooltip.visible ? (
+                {tradeTooltip.visible && tooltipContainerRef.current === holdingsSummaryRef.current ? (
                   <div
                     className="holdings-tooltip"
                     style={{ left: tradeTooltip.x, top: tradeTooltip.y }}
@@ -672,6 +684,84 @@ export default function BacktestDetailPage() {
           </table>
         </div>
       </section>
+
+      {holdingsModalOpen ? (
+        <div
+          className="modal-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setHoldingsModalOpen(false);
+          }}
+        >
+          <div className="modal-card holdings-modal" ref={holdingsModalRef} onMouseMove={moveTradeTooltip}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0 }}>持有过的股票（最终收益）</h3>
+              <button type="button" className="link-button" onClick={() => setHoldingsModalOpen(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>最后持有日</th>
+                    <th>最终收益</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {holdingsSummary.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="empty">
+                        暂无数据
+                      </td>
+                    </tr>
+                  ) : (
+                    holdingsSummary.map((item) => (
+                      <tr
+                        key={`modal-${item.ts_code}`}
+                        onMouseEnter={(event) => showTradeTooltip(event, item, holdingsModalRef.current)}
+                        onMouseLeave={hideTradeTooltip}
+                      >
+                        <td>{item.ts_code}</td>
+                        <td>{item.stock_name || "-"}</td>
+                        <td>{formatDate(item.trade_date)}</td>
+                        <td>{formatPct(item.return_pct)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {tradeTooltip.visible && tooltipContainerRef.current === holdingsModalRef.current ? (
+              <div
+                className="holdings-tooltip"
+                style={{ left: tradeTooltip.x, top: tradeTooltip.y }}
+                ref={holdingsTooltipRef}
+              >
+                <div className="holdings-tooltip-title">{tradeTooltip.title}</div>
+                {tradeTooltip.loading ? (
+                  <div className="holdings-tooltip-loading">加载中...</div>
+                ) : tradeTooltip.items.length === 0 ? (
+                  <div className="holdings-tooltip-empty">暂无交易记录</div>
+                ) : (
+                  <div className="holdings-tooltip-list">
+                    {tradeTooltip.items.map((row, idx) => (
+                      <div key={`${row.trade_date}-${row.side}-${idx}`} className="holdings-tooltip-row">
+                        <span>{formatDate(row.trade_date)}</span>
+                        <span className={row.side === "BUY" ? "trade-buy" : "trade-sell"}>{row.side || "-"}</span>
+                        <span>{formatNum(row.price, 3)}</span>
+                        <span>{row.qty}</span>
+                        <span>{formatNum(row.amount, 2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <section className="panel compact-panel" style={{ marginBottom: 8 }}>
         <h3 style={{ marginTop: 0, marginBottom: 8 }}>交易明细</h3>

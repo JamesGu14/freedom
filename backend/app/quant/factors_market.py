@@ -12,7 +12,11 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def classify_market_regime(row: dict[str, Any] | None) -> tuple[str, float]:
+def classify_market_regime(
+    row: dict[str, Any] | None,
+    *,
+    recent_pct_changes: list[float] | None = None,
+) -> tuple[str, float]:
     if not row:
         return "neutral", 0.7
 
@@ -22,9 +26,25 @@ def classify_market_regime(row: dict[str, Any] | None) -> tuple[str, float]:
         macd_value = _to_float(row.get("macd"))
     macd_value = macd_value or 0.0
 
-    if pct_change >= 1.0 and macd_value > 0:
+    history = list(recent_pct_changes or [])
+    history.append(pct_change)
+    recent5 = history[-5:]
+    recent20 = history[-20:]
+    ma5 = sum(recent5) / len(recent5) if recent5 else pct_change
+    ma20 = sum(recent20) / len(recent20) if recent20 else pct_change
+    up_ratio5 = (sum(1 for value in recent5 if value > 0) / len(recent5)) if recent5 else 0.5
+
+    risk_on = (
+        (ma5 >= 0.20 and ma20 >= 0.05 and up_ratio5 >= 0.60 and macd_value >= 0)
+        or (ma5 >= 0.35 and ma20 >= 0.10)
+    )
+    risk_off = (
+        (ma5 <= -0.25 and ma20 <= -0.05 and up_ratio5 <= 0.40 and macd_value <= 0)
+        or (ma5 <= -0.45 and ma20 <= -0.15)
+    )
+
+    if risk_on:
         return "risk_on", 1.0
-    if pct_change <= -1.0 and macd_value < 0:
+    if risk_off:
         return "risk_off", 0.4
     return "neutral", 0.7
-

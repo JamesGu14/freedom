@@ -50,6 +50,9 @@ DEFAULT_BACKTEST_PARAMS: dict[str, Any] = {
     "score_direction": "reverse",
     "enable_buy_tech_filter": True,
     "allowed_boards": ["sh_main", "sz_main", "star", "gem"],
+    "score_ceiling": 100.0,
+    "slot_min_scale": 0.6,
+    "min_gross_exposure": 0.0,
 }
 
 
@@ -162,6 +165,54 @@ def _effective_score(raw_score: Any, direction: str) -> float:
     return score
 
 
+def _apply_min_gross_exposure(
+    *,
+    buy_orders: list[dict[str, Any]],
+    sell_orders: list[dict[str, Any]],
+    portfolio: PortfolioState,
+    close_map: dict[str, float],
+    total_equity: float,
+    min_gross_exposure: float,
+    per_position_cap: float,
+) -> None:
+    if total_equity <= 0 or min_gross_exposure <= 0 or not buy_orders:
+        return
+    target_exposure = max(min(min_gross_exposure, 1.0), 0.0)
+    cap = max(min(per_position_cap, 1.0), 0.0)
+    if cap <= 0:
+        return
+
+    sold_codes = {str(item.get("ts_code") or "") for item in sell_orders if str(item.get("side") or "") == "SELL"}
+    remaining_position_value = 0.0
+    for ts_code, position in portfolio.positions.items():
+        if ts_code in sold_codes:
+            continue
+        close = _to_float(close_map.get(ts_code), 0.0)
+        if close <= 0:
+            continue
+        remaining_position_value += close * float(position.qty)
+
+    current_exposure = remaining_position_value / total_equity if total_equity > 0 else 0.0
+    planned_buy_weight = sum(_to_float(item.get("target_weight"), 0.0) for item in buy_orders)
+    shortfall = target_exposure - (current_exposure + planned_buy_weight)
+    if shortfall <= 0:
+        return
+
+    ranked_orders = sorted(buy_orders, key=lambda item: _to_float(item.get("score"), 0.0), reverse=True)
+    for order in ranked_orders:
+        if shortfall <= 0:
+            break
+        current_weight = _to_float(order.get("target_weight"), 0.0)
+        headroom = max(cap - current_weight, 0.0)
+        if headroom <= 0:
+            continue
+        add_weight = min(headroom, shortfall)
+        new_weight = current_weight + add_weight
+        order["target_weight"] = new_weight
+        order["target_amount"] = calc_target_amount(total_equity=total_equity, target_weight=new_weight)
+        shortfall -= add_weight
+
+
 class BacktestEngine:
     def __init__(self, strategy: StrategyProtocol):
         self.strategy = strategy
@@ -198,11 +249,14 @@ class BacktestEngine:
         peak_nav = 1.0
         sell_confirm_days = max(int(params.get("sell_confirm_days", 1) or 1), 1)
         signal_store_topk = max(int(params.get("signal_store_topk", 100) or 0), 0)
+        min_gross_exposure = max(min(_to_float(params.get("min_gross_exposure"), 0.0), 1.0), 0.0)
         sell_signal_streak: dict[str, int] = {}
+        market_pct_history: list[float] = []
         logger.info(
-            "run config: score_direction=%s, allowed_boards=%s",
+            "run config: score_direction=%s, allowed_boards=%s, min_gross_exposure=%.2f",
             score_direction,
             ",".join(sorted(allowed_boards)),
+            min_gross_exposure,
         )
 
         nav_rows: list[dict[str, Any]] = []
@@ -219,7 +273,14 @@ class BacktestEngine:
                 logger.info("[%s/%s] %s frame empty, skip", idx, len(open_dates) - 1, trade_date)
                 continue
 
-            market_regime, exposure = classify_market_regime(bundle.market_factor_t)
+            market_row = bundle.market_factor_t or {}
+            market_regime, exposure = classify_market_regime(
+                market_row,
+                recent_pct_changes=market_pct_history,
+            )
+            market_pct_history.append(_to_float(market_row.get("pct_change"), 0.0))
+            if len(market_pct_history) > 40:
+                market_pct_history = market_pct_history[-40:]
             exposure_map = dict(params.get("market_exposure") or {})
             market_exposure = _to_float(exposure_map.get(market_regime), exposure)
             if market_exposure < 0.4:
@@ -461,6 +522,9 @@ class BacktestEngine:
                         score=_to_float(row.get("score")),
                         market_exposure=market_exposure,
                         slot_weight=slot_weight,
+                        buy_threshold=buy_threshold,
+                        score_ceiling=_to_float(params.get("score_ceiling"), 100.0),
+                        slot_min_scale=_to_float(params.get("slot_min_scale"), 0.6),
                         sector_weight=1.0,
                     )
                     target_weight = min(target_weight, sector_max)
@@ -497,6 +561,24 @@ class BacktestEngine:
                         }
                     )
                     available_slots -= 1
+
+            if buy_orders and min_gross_exposure > 0:
+                _apply_min_gross_exposure(
+                    buy_orders=buy_orders,
+                    sell_orders=sell_orders,
+                    portfolio=portfolio,
+                    close_map=close_map_t,
+                    total_equity=total_equity_t,
+                    min_gross_exposure=min_gross_exposure,
+                    per_position_cap=sector_max,
+                )
+                for order in buy_orders:
+                    ts_code = str(order.get("ts_code") or "")
+                    row = signal_rows.get(ts_code)
+                    if not row:
+                        continue
+                    row["target_weight"] = _to_float(order.get("target_weight"))
+                    row["target_amount"] = _to_float(order.get("target_amount"))
 
             orders = sell_orders + buy_orders
             next_daily = bundle.frame_t1
