@@ -520,6 +520,14 @@ export default function BacktestDetailPage() {
                 } ~ ${detail.end_date || "-"}`
               : "加载中..."}
           </p>
+          {runId ? (
+            <p className="usage-command">
+              <span className="usage-command-label">使用命令：</span>
+              <code className="usage-command-code">
+                python backend/scripts/backtest/run_backtest.py --run-id {runId}
+              </code>
+            </p>
+          ) : null}
         </div>
         <div className="header-actions">
           <Link className="link-button" href="/backtests">

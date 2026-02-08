@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import datetime as dt
 import logging
 import math
@@ -24,7 +23,7 @@ from app.quant.base import StrategyContext, StrategyProtocol
 from app.quant.context import load_daily_data_bundle
 from app.quant.execution import execute_orders
 from app.quant.factors_market import classify_market_regime
-from app.quant.factors_sector import build_sector_strength_map
+from app.quant.factors_sector import build_sector_strength_maps
 from app.quant.metrics import build_summary_metrics
 from app.quant.portfolio import PortfolioState
 
@@ -53,6 +52,13 @@ DEFAULT_BACKTEST_PARAMS: dict[str, Any] = {
     "score_ceiling": 100.0,
     "slot_min_scale": 0.6,
     "min_gross_exposure": 0.0,
+    "use_member_sector_mapping": True,
+    "sector_source_weights": {"sw": 0.6, "ci": 0.4},
+    "max_daily_buy_count": 99,
+    "max_daily_sell_count": 99,
+    "max_daily_trade_count": 99,
+    "max_daily_rotate_count": 99,
+    "reentry_cooldown_days": 0,
 }
 
 
@@ -92,6 +98,15 @@ def _to_bool(value: Any, default: bool = True) -> bool:
     if text in {"0", "false", "no", "n", "off"}:
         return False
     return default
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _normalize_allowed_boards(value: Any) -> set[str]:
@@ -163,6 +178,71 @@ def _effective_score(raw_score: Any, direction: str) -> float:
     if score > 100.0:
         return 100.0
     return score
+
+
+def _normalize_limit(value: Any, default: int) -> int:
+    result = _to_int(value, default)
+    return max(result, 0)
+
+
+def _normalize_sector_source_weights(value: Any) -> dict[str, float]:
+    default = {"sw": 0.6, "ci": 0.4}
+    if not isinstance(value, dict):
+        return default
+    sw = max(_to_float(value.get("sw"), default["sw"]), 0.0)
+    ci = max(_to_float(value.get("ci"), default["ci"]), 0.0)
+    if sw + ci <= 0:
+        return default
+    total = sw + ci
+    return {
+        "sw": sw / total,
+        "ci": ci / total,
+    }
+
+
+def _resolve_sector_strength(
+    *,
+    ts_code: Any,
+    industry_name: Any,
+    shenwan_member_codes_map: dict[str, list[str]],
+    citic_member_codes_map: dict[str, list[str]],
+    sector_strength_name_map: dict[str, float],
+    sector_strength_sw_map: dict[str, float],
+    sector_strength_ci_map: dict[str, float],
+    source_weights: dict[str, float],
+) -> float:
+    ts_code_text = str(ts_code or "").strip().upper()
+    sw_codes = shenwan_member_codes_map.get(ts_code_text, [])
+    ci_codes = citic_member_codes_map.get(ts_code_text, [])
+
+    sw_scores = [sector_strength_sw_map.get(code) for code in sw_codes if code in sector_strength_sw_map]
+    ci_scores = [sector_strength_ci_map.get(code) for code in ci_codes if code in sector_strength_ci_map]
+
+    sw_avg = (sum(sw_scores) / len(sw_scores)) if sw_scores else None
+    ci_avg = (sum(ci_scores) / len(ci_scores)) if ci_scores else None
+    if sw_avg is not None and ci_avg is not None:
+        sw_weight = max(_to_float(source_weights.get("sw"), 0.6), 0.0)
+        ci_weight = max(_to_float(source_weights.get("ci"), 0.4), 0.0)
+        total = sw_weight + ci_weight
+        if total <= 0:
+            return (sw_avg + ci_avg) / 2.0
+        return (sw_avg * sw_weight + ci_avg * ci_weight) / total
+    if sw_avg is not None:
+        return sw_avg
+    if ci_avg is not None:
+        return ci_avg
+    return _to_float(sector_strength_name_map.get(str(industry_name or "").strip()), 50.0)
+
+
+def _sell_order_priority(order: dict[str, Any]) -> tuple[int, float]:
+    reasons = {str(item) for item in (order.get("reason_codes") or [])}
+    if "stop_loss" in reasons or "trail_stop" in reasons:
+        return (0, _to_float(order.get("score"), 0.0))
+    if "max_hold" in reasons:
+        return (1, _to_float(order.get("score"), 0.0))
+    if "rotate_out" in reasons:
+        return (2, _to_float(order.get("score"), 0.0))
+    return (3, _to_float(order.get("score"), 0.0))
 
 
 def _apply_min_gross_exposure(
@@ -250,13 +330,27 @@ class BacktestEngine:
         sell_confirm_days = max(int(params.get("sell_confirm_days", 1) or 1), 1)
         signal_store_topk = max(int(params.get("signal_store_topk", 100) or 0), 0)
         min_gross_exposure = max(min(_to_float(params.get("min_gross_exposure"), 0.0), 1.0), 0.0)
+        use_member_sector_mapping = _to_bool(params.get("use_member_sector_mapping"), True)
+        sector_source_weights = _normalize_sector_source_weights(params.get("sector_source_weights"))
+        max_daily_buy_count = _normalize_limit(params.get("max_daily_buy_count"), 99)
+        max_daily_sell_count = _normalize_limit(params.get("max_daily_sell_count"), 99)
+        max_daily_trade_count = _normalize_limit(params.get("max_daily_trade_count"), 99)
+        max_daily_rotate_count = _normalize_limit(params.get("max_daily_rotate_count"), 99)
+        reentry_cooldown_days = max(_to_int(params.get("reentry_cooldown_days"), 0), 0)
         sell_signal_streak: dict[str, int] = {}
+        last_exit_trade_index: dict[str, int] = {}
         market_pct_history: list[float] = []
         logger.info(
-            "run config: score_direction=%s, allowed_boards=%s, min_gross_exposure=%.2f",
+            "run config: score_direction=%s, allowed_boards=%s, min_gross_exposure=%.2f, member_sector_mapping=%s, buy_limit=%s, sell_limit=%s, trade_limit=%s, rotate_limit=%s, reentry_cooldown=%s",
             score_direction,
             ",".join(sorted(allowed_boards)),
             min_gross_exposure,
+            use_member_sector_mapping,
+            max_daily_buy_count,
+            max_daily_sell_count,
+            max_daily_trade_count,
+            max_daily_rotate_count,
+            reentry_cooldown_days,
         )
 
         nav_rows: list[dict[str, Any]] = []
@@ -300,8 +394,28 @@ class BacktestEngine:
                 logger.info("[%s/%s] %s no candidates after filters", idx, len(open_dates) - 1, trade_date)
                 continue
 
-            sector_strength_map = build_sector_strength_map(bundle.sector_rows_t)
-            frame["sector_strength"] = frame["industry"].map(sector_strength_map).fillna(50.0)
+            sector_strength_maps = build_sector_strength_maps(bundle.sector_rows_t)
+            sector_strength_name_map = sector_strength_maps.get("name", {})
+            sector_strength_sw_map = sector_strength_maps.get("sw_code", {})
+            sector_strength_ci_map = sector_strength_maps.get("ci_code", {})
+            shenwan_member_codes_map = bundle.shenwan_member_codes_t or {}
+            citic_member_codes_map = bundle.citic_member_codes_t or {}
+            if use_member_sector_mapping:
+                frame["sector_strength"] = frame.apply(
+                    lambda row: _resolve_sector_strength(
+                        ts_code=row.get("ts_code"),
+                        industry_name=row.get("industry"),
+                        shenwan_member_codes_map=shenwan_member_codes_map,
+                        citic_member_codes_map=citic_member_codes_map,
+                        sector_strength_name_map=sector_strength_name_map,
+                        sector_strength_sw_map=sector_strength_sw_map,
+                        sector_strength_ci_map=sector_strength_ci_map,
+                        source_weights=sector_source_weights,
+                    ),
+                    axis=1,
+                )
+            else:
+                frame["sector_strength"] = frame["industry"].map(sector_strength_name_map).fillna(50.0)
 
             strategy_context = StrategyContext(
                 trade_date=trade_date,
@@ -440,8 +554,56 @@ class BacktestEngine:
                     }
                 )
 
+            if max_daily_sell_count > 0 and len(sell_orders) > max_daily_sell_count:
+                sorted_sell_orders = sorted(sell_orders, key=_sell_order_priority)
+                keep_sell_orders = sorted_sell_orders[:max_daily_sell_count]
+                keep_codes = {str(item.get("ts_code") or "") for item in keep_sell_orders}
+                drop_codes = {
+                    str(item.get("ts_code") or "")
+                    for item in sell_orders
+                    if str(item.get("ts_code") or "") not in keep_codes
+                }
+                for ts_code in drop_codes:
+                    row = signal_rows.get(ts_code)
+                    if not row:
+                        continue
+                    reason_codes = list(row.get("reason_codes") or [])
+                    if "sell_throttled" not in reason_codes:
+                        reason_codes.append("sell_throttled")
+                    row["signal"] = "HOLD"
+                    row["reason_codes"] = reason_codes
+                sell_orders = keep_sell_orders
+            if max_daily_trade_count > 0 and len(sell_orders) > max_daily_trade_count:
+                sorted_sell_orders = sorted(sell_orders, key=_sell_order_priority)
+                keep_sell_orders = sorted_sell_orders[:max_daily_trade_count]
+                keep_codes = {str(item.get("ts_code") or "") for item in keep_sell_orders}
+                drop_codes = {
+                    str(item.get("ts_code") or "")
+                    for item in sell_orders
+                    if str(item.get("ts_code") or "") not in keep_codes
+                }
+                for ts_code in drop_codes:
+                    row = signal_rows.get(ts_code)
+                    if not row:
+                        continue
+                    reason_codes = list(row.get("reason_codes") or [])
+                    if "trade_throttled" not in reason_codes:
+                        reason_codes.append("trade_throttled")
+                    row["signal"] = "HOLD"
+                    row["reason_codes"] = reason_codes
+                sell_orders = keep_sell_orders
+
             buy_threshold = _to_float(params.get("buy_threshold"), 75.0)
             candidates = scored[(scored["score"] >= buy_threshold) & (~scored["ts_code"].isin(list(portfolio.positions.keys())))]
+            if reentry_cooldown_days > 0 and last_exit_trade_index:
+                current_trade_index = trade_index_map.get(trade_date, idx)
+                blocked_codes = {
+                    ts_code
+                    for ts_code, exit_trade_index in last_exit_trade_index.items()
+                    if current_trade_index - int(exit_trade_index) < reentry_cooldown_days
+                }
+                if blocked_codes:
+                    candidates = candidates[~candidates["ts_code"].isin(list(blocked_codes))]
             enable_buy_tech_filter = _to_bool(params.get("enable_buy_tech_filter"), True)
             if enable_buy_tech_filter:
                 candidates = candidates[
@@ -460,12 +622,25 @@ class BacktestEngine:
             sector_max = _to_float(params.get("sector_max"), 0.40)
             rotate_target_code = ""
             rotate_group_id = ""
+            rotate_count_today = 0
 
             filled_slots_after_sells = portfolio.holding_count() - len({order["ts_code"] for order in sell_orders})
             available_slots = max(max_positions - max(filled_slots_after_sells, 0), 0)
+            if max_daily_trade_count > 0:
+                available_trade_budget = max(max_daily_trade_count - len(sell_orders), 0)
+                if available_trade_budget <= 0:
+                    available_slots = 0
+            else:
+                available_trade_budget = -1
 
             # Rotation when full and no explicit sell signal.
-            if available_slots <= 0 and not sell_orders and not candidates.empty and holding_scores:
+            if (
+                available_slots <= 0
+                and not sell_orders
+                and not candidates.empty
+                and holding_scores
+                and (max_daily_rotate_count <= 0 or rotate_count_today < max_daily_rotate_count)
+            ):
                 candidate_row = candidates.iloc[0]
                 worst = pick_worst_holding(holding_scores)
                 if worst and should_rotate(
@@ -508,10 +683,17 @@ class BacktestEngine:
                         }
                     )
                     available_slots = 1
+                    rotate_count_today += 1
+                    if available_trade_budget >= 0:
+                        available_trade_budget = max(available_trade_budget - 1, 0)
 
             if market_exposure >= 0.4 and available_slots > 0 and not candidates.empty:
                 for row in candidates.to_dict(orient="records"):
                     if available_slots <= 0:
+                        break
+                    if max_daily_buy_count > 0 and len(buy_orders) >= max_daily_buy_count:
+                        break
+                    if available_trade_budget >= 0 and available_trade_budget <= 0:
                         break
                     ts_code = str(row.get("ts_code") or "")
                     if not ts_code:
@@ -561,6 +743,8 @@ class BacktestEngine:
                         }
                     )
                     available_slots -= 1
+                    if available_trade_budget >= 0:
+                        available_trade_budget -= 1
 
             if buy_orders and min_gross_exposure > 0:
                 _apply_min_gross_exposure(
@@ -598,6 +782,10 @@ class BacktestEngine:
                 all_trades.extend(trades)
                 for trade in trades:
                     if str(trade.get("side")) == "SELL":
+                        trade_ts_code = str(trade.get("ts_code") or "")
+                        trade_index_value = _to_int(trade.get("trade_index"), trade_index_map.get(next_trade_date, idx))
+                        if trade_ts_code:
+                            last_exit_trade_index[trade_ts_code] = trade_index_value
                         sell_signal_streak.pop(str(trade.get("ts_code") or ""), None)
 
             close_map_t1 = {}
