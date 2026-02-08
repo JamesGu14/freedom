@@ -3,16 +3,24 @@ from __future__ import annotations
 from typing import Any
 
 
-def score_to_slot_weight(score: float, slot_weight: float = 0.2) -> float:
-    if score >= 90:
-        return slot_weight * 1.0
-    if score >= 85:
-        return slot_weight * 0.75
-    if score >= 80:
-        return slot_weight * 0.5
-    if score >= 75:
-        return slot_weight * 0.25
-    return 0.0
+def score_to_slot_weight(
+    score: float,
+    *,
+    slot_weight: float = 0.2,
+    buy_threshold: float = 75.0,
+    score_ceiling: float = 100.0,
+    min_scale: float = 0.6,
+) -> float:
+    if slot_weight <= 0:
+        return 0.0
+    if score < buy_threshold:
+        return 0.0
+    span = max(score_ceiling - buy_threshold, 1.0)
+    progress = (score - buy_threshold) / span
+    progress = max(min(progress, 1.0), 0.0)
+    min_scale = max(min(min_scale, 1.0), 0.0)
+    scale = min_scale + (1.0 - min_scale) * progress
+    return slot_weight * scale
 
 
 def calc_target_weight(
@@ -20,9 +28,18 @@ def calc_target_weight(
     score: float,
     market_exposure: float,
     slot_weight: float,
+    buy_threshold: float = 75.0,
+    score_ceiling: float = 100.0,
+    slot_min_scale: float = 0.6,
     sector_weight: float = 1.0,
 ) -> float:
-    base = score_to_slot_weight(score, slot_weight=slot_weight)
+    base = score_to_slot_weight(
+        score,
+        slot_weight=slot_weight,
+        buy_threshold=buy_threshold,
+        score_ceiling=score_ceiling,
+        min_scale=slot_min_scale,
+    )
     if base <= 0:
         return 0.0
     return max(base * market_exposure * sector_weight, 0.0)
@@ -64,4 +81,3 @@ def pick_worst_holding(holding_scores: list[dict[str, Any]]) -> dict[str, Any] |
         holding_scores,
         key=lambda x: (float(x.get("score") or 0.0), float(x.get("profit_pct") or 0.0)),
     )[0]
-
