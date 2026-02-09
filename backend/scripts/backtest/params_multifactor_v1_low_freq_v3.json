@@ -1,0 +1,65 @@
+{
+  "name": "multifactor_v1_low_freq_v3_sector_leader",
+  "strategy_key": "multifactor_v1",
+  "description": "低频强势题材版V3：恢复反向评分有效方向，强化强势板块优先与年化交易硬约束。",
+  "params_snapshot": {
+    "buy_threshold": 84.0,
+    "sell_threshold": 46.0,
+    "stop_loss_pct": 0.075,
+    "trail_stop_pct": 0.11,
+    "max_hold_days": 75,
+    "min_avg_amount_20d": 65000.0,
+    "max_positions": 4,
+    "slot_weight": 0.22,
+    "market_exposure": {
+      "risk_on": 1.0,
+      "neutral": 0.75,
+      "risk_off": 0.15
+    },
+    "market_exposure_floor": 0.15,
+    "allow_buy_in_risk_off": false,
+    "rotate_score_delta": 18.0,
+    "rotate_profit_ceiling": 0.0,
+    "min_hold_days_before_rotate": 15,
+    "sector_max": 0.33,
+    "sell_confirm_days": 2,
+    "signal_store_topk": 120,
+    "score_direction": "reverse",
+    "factor_weights": {
+      "stock_trend": 0.32,
+      "sector_strength": 0.38,
+      "value_quality": 0.18,
+      "liquidity_stability": 0.12
+    },
+    "enable_buy_tech_filter": true,
+    "entry_require_trend_alignment": true,
+    "entry_require_macd_positive": true,
+    "entry_min_sector_strength": 62.0,
+    "entry_sector_strength_quantile": 0.72,
+    "entry_rsi_min": 50.0,
+    "entry_rsi_max": 72.0,
+    "entry_max_pct_chg": 5.8,
+    "allowed_boards": [
+      "sh_main",
+      "sz_main",
+      "gem"
+    ],
+    "score_ceiling": 100.0,
+    "slot_min_scale": 0.68,
+    "min_gross_exposure": 0.0,
+    "use_member_sector_mapping": true,
+    "sector_source_weights": {
+      "sw": 0.7,
+      "ci": 0.3
+    },
+    "max_daily_buy_count": 1,
+    "max_daily_sell_count": 2,
+    "max_daily_trade_count": 2,
+    "max_daily_rotate_count": 0,
+    "reentry_cooldown_days": 20,
+    "annual_trade_window_days": 252,
+    "max_annual_trade_count": 96,
+    "max_annual_buy_count": 48,
+    "max_annual_sell_count": 48
+  }
+}
