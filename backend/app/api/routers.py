@@ -13,6 +13,7 @@ from app.api.routes import (
     stock_groups_router,
     stocks_router,
     strategies_router,
+    strategy_signals_router,
     users_router,
 )
 from app.api.deps import get_current_user
@@ -54,6 +55,11 @@ router.include_router(
 )
 router.include_router(
     daily_signals_router, tags=["daily_signals"], dependencies=[Depends(get_current_user)]
+)
+router.include_router(
+    strategy_signals_router,
+    tags=["strategy_signals"],
+    dependencies=[Depends(get_current_user)],
 )
 router.include_router(
     stock_groups_router, tags=["stock_groups"], dependencies=[Depends(get_current_user)]

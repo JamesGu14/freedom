@@ -1,6 +1,67 @@
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import { apiFetch } from "../lib/api";
+
+const PARAMS_DEFAULT = {
+  strategy_key: "multifactor_v1",
+  score_direction: "normal",
+  buy_threshold: 75,
+  sell_threshold: 50,
+  max_positions: 5,
+  slot_weight: 0.2,
+  sector_max: 0.4,
+  min_avg_amount_20d: 25000,
+  market_exposure: { risk_on: 1.0, neutral: 0.7, risk_off: 0.4 },
+  stop_loss_pct: 0.08,
+  trail_stop_pct: 0.1,
+  max_hold_days: 40,
+  sell_confirm_days: 1,
+  rotate_score_delta: 8,
+  rotate_profit_ceiling: 0.05,
+  min_hold_days_before_rotate: 3,
+  score_ceiling: 100,
+  slot_min_scale: 0.6,
+  min_gross_exposure: 0,
+  market_exposure_floor: 0.4,
+  allow_buy_in_risk_off: true,
+  allowed_boards: ["sh_main", "sz_main", "star", "gem"],
+  enable_buy_tech_filter: true,
+  entry_require_trend_alignment: false,
+  entry_require_macd_positive: false,
+  entry_min_sector_strength: 0,
+  entry_sector_strength_quantile: 0,
+  entry_rsi_min: 0,
+  entry_rsi_max: 100,
+  entry_max_pct_chg: 100,
+  factor_weights: {
+    stock_trend: 0.35,
+    sector_strength: 0.25,
+    value_quality: 0.25,
+    liquidity_stability: 0.15,
+  },
+  signal_store_topk: 100,
+  use_member_sector_mapping: true,
+  sector_source_weights: { sw: 0.6, ci: 0.4 },
+  max_daily_buy_count: 99,
+  max_daily_sell_count: 99,
+  max_daily_trade_count: 99,
+  max_daily_rotate_count: 99,
+  reentry_cooldown_days: 0,
+  annual_trade_window_days: 252,
+  max_annual_trade_count: 0,
+  max_annual_buy_count: 0,
+  max_annual_sell_count: 0,
+};
+
+const BOARD_OPTIONS = [
+  { value: "sh_main", label: "沪市主板" },
+  { value: "sz_main", label: "深市主板" },
+  { value: "star", label: "科创板" },
+  { value: "gem", label: "创业板" },
+  { value: "bse", label: "北交所" },
+  { value: "other", label: "其他板块" },
+];
 
 const formatDateTime = (value) => {
   if (!value) return "-";
@@ -15,6 +76,215 @@ const formatPct = (value) => {
   if (Number.isNaN(num)) return "-";
   const prefix = num > 0 ? "+" : "";
   return `${prefix}${(num * 100).toFixed(2)}%`;
+};
+
+const toInputValue = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value);
+};
+
+const toFloat = (value, fallback) => {
+  if (value === null || value === undefined || value === "") return fallback;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return num;
+};
+
+const toInt = (value, fallback) => {
+  if (value === null || value === undefined || value === "") return fallback;
+  const num = Number.parseInt(value, 10);
+  if (!Number.isFinite(num)) return fallback;
+  return num;
+};
+
+const normalizeScoreDirection = (value) => {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "reverse") return "reverse";
+  return "normal";
+};
+
+const mergeParamsSnapshot = (snapshot) => {
+  const source = snapshot && typeof snapshot === "object" ? snapshot : {};
+  const marketExposure = {
+    ...PARAMS_DEFAULT.market_exposure,
+    ...(source.market_exposure && typeof source.market_exposure === "object"
+      ? source.market_exposure
+      : {}),
+  };
+  const sectorSourceWeights = {
+    ...PARAMS_DEFAULT.sector_source_weights,
+    ...(source.sector_source_weights && typeof source.sector_source_weights === "object"
+      ? source.sector_source_weights
+      : {}),
+  };
+  const factorWeights = {
+    ...PARAMS_DEFAULT.factor_weights,
+    ...(source.factor_weights && typeof source.factor_weights === "object"
+      ? source.factor_weights
+      : {}),
+  };
+
+  let allowedBoards = PARAMS_DEFAULT.allowed_boards;
+  if (Array.isArray(source.allowed_boards)) {
+    const normalized = source.allowed_boards
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter(Boolean);
+    if (normalized.length > 0) allowedBoards = normalized;
+  }
+
+  return {
+    ...PARAMS_DEFAULT,
+    ...source,
+    strategy_key: String(source.strategy_key || PARAMS_DEFAULT.strategy_key),
+    score_direction: normalizeScoreDirection(source.score_direction || PARAMS_DEFAULT.score_direction),
+    market_exposure: marketExposure,
+    sector_source_weights: sectorSourceWeights,
+    factor_weights: factorWeights,
+    allowed_boards: Array.from(new Set(allowedBoards)),
+  };
+};
+
+const buildParamsForm = (snapshot) => {
+  const merged = mergeParamsSnapshot(snapshot);
+  const allowedSet = new Set(merged.allowed_boards);
+  return {
+    strategy_key: String(merged.strategy_key || PARAMS_DEFAULT.strategy_key),
+    score_direction: normalizeScoreDirection(merged.score_direction),
+    buy_threshold: toInputValue(merged.buy_threshold),
+    sell_threshold: toInputValue(merged.sell_threshold),
+    max_positions: toInputValue(merged.max_positions),
+    slot_weight: toInputValue(merged.slot_weight),
+    sector_max: toInputValue(merged.sector_max),
+    min_avg_amount_20d: toInputValue(merged.min_avg_amount_20d),
+    market_exposure_risk_on: toInputValue(merged.market_exposure.risk_on),
+    market_exposure_neutral: toInputValue(merged.market_exposure.neutral),
+    market_exposure_risk_off: toInputValue(merged.market_exposure.risk_off),
+    stop_loss_pct: toInputValue(merged.stop_loss_pct),
+    trail_stop_pct: toInputValue(merged.trail_stop_pct),
+    max_hold_days: toInputValue(merged.max_hold_days),
+    sell_confirm_days: toInputValue(merged.sell_confirm_days),
+    rotate_score_delta: toInputValue(merged.rotate_score_delta),
+    rotate_profit_ceiling: toInputValue(merged.rotate_profit_ceiling),
+    min_hold_days_before_rotate: toInputValue(merged.min_hold_days_before_rotate),
+    score_ceiling: toInputValue(merged.score_ceiling),
+    slot_min_scale: toInputValue(merged.slot_min_scale),
+    min_gross_exposure: toInputValue(merged.min_gross_exposure),
+    market_exposure_floor: toInputValue(merged.market_exposure_floor),
+    allow_buy_in_risk_off: Boolean(merged.allow_buy_in_risk_off),
+    entry_require_trend_alignment: Boolean(merged.entry_require_trend_alignment),
+    entry_require_macd_positive: Boolean(merged.entry_require_macd_positive),
+    entry_min_sector_strength: toInputValue(merged.entry_min_sector_strength),
+    entry_sector_strength_quantile: toInputValue(merged.entry_sector_strength_quantile),
+    entry_rsi_min: toInputValue(merged.entry_rsi_min),
+    entry_rsi_max: toInputValue(merged.entry_rsi_max),
+    entry_max_pct_chg: toInputValue(merged.entry_max_pct_chg),
+    factor_weights_stock_trend: toInputValue(merged.factor_weights.stock_trend),
+    factor_weights_sector_strength: toInputValue(merged.factor_weights.sector_strength),
+    factor_weights_value_quality: toInputValue(merged.factor_weights.value_quality),
+    factor_weights_liquidity_stability: toInputValue(merged.factor_weights.liquidity_stability),
+    enable_buy_tech_filter: Boolean(merged.enable_buy_tech_filter),
+    signal_store_topk: toInputValue(merged.signal_store_topk),
+    use_member_sector_mapping: Boolean(merged.use_member_sector_mapping),
+    sector_source_weights_sw: toInputValue(merged.sector_source_weights.sw),
+    sector_source_weights_ci: toInputValue(merged.sector_source_weights.ci),
+    max_daily_buy_count: toInputValue(merged.max_daily_buy_count),
+    max_daily_sell_count: toInputValue(merged.max_daily_sell_count),
+    max_daily_trade_count: toInputValue(merged.max_daily_trade_count),
+    max_daily_rotate_count: toInputValue(merged.max_daily_rotate_count),
+    reentry_cooldown_days: toInputValue(merged.reentry_cooldown_days),
+    annual_trade_window_days: toInputValue(merged.annual_trade_window_days),
+    max_annual_trade_count: toInputValue(merged.max_annual_trade_count),
+    max_annual_buy_count: toInputValue(merged.max_annual_buy_count),
+    max_annual_sell_count: toInputValue(merged.max_annual_sell_count),
+    allowed_boards_sh_main: allowedSet.has("sh_main"),
+    allowed_boards_sz_main: allowedSet.has("sz_main"),
+    allowed_boards_star: allowedSet.has("star"),
+    allowed_boards_gem: allowedSet.has("gem"),
+    allowed_boards_bse: allowedSet.has("bse"),
+    allowed_boards_other: allowedSet.has("other"),
+  };
+};
+
+const buildParamsSnapshot = (form) => {
+  const allowedBoards = BOARD_OPTIONS.filter((item) => Boolean(form[`allowed_boards_${item.value}`])).map(
+    (item) => item.value
+  );
+  return {
+    strategy_key: String(form.strategy_key || "").trim() || PARAMS_DEFAULT.strategy_key,
+    score_direction: normalizeScoreDirection(form.score_direction),
+    buy_threshold: toFloat(form.buy_threshold, PARAMS_DEFAULT.buy_threshold),
+    sell_threshold: toFloat(form.sell_threshold, PARAMS_DEFAULT.sell_threshold),
+    max_positions: toInt(form.max_positions, PARAMS_DEFAULT.max_positions),
+    slot_weight: toFloat(form.slot_weight, PARAMS_DEFAULT.slot_weight),
+    sector_max: toFloat(form.sector_max, PARAMS_DEFAULT.sector_max),
+    min_avg_amount_20d: toFloat(form.min_avg_amount_20d, PARAMS_DEFAULT.min_avg_amount_20d),
+    market_exposure: {
+      risk_on: toFloat(form.market_exposure_risk_on, PARAMS_DEFAULT.market_exposure.risk_on),
+      neutral: toFloat(form.market_exposure_neutral, PARAMS_DEFAULT.market_exposure.neutral),
+      risk_off: toFloat(form.market_exposure_risk_off, PARAMS_DEFAULT.market_exposure.risk_off),
+    },
+    stop_loss_pct: toFloat(form.stop_loss_pct, PARAMS_DEFAULT.stop_loss_pct),
+    trail_stop_pct: toFloat(form.trail_stop_pct, PARAMS_DEFAULT.trail_stop_pct),
+    max_hold_days: toInt(form.max_hold_days, PARAMS_DEFAULT.max_hold_days),
+    sell_confirm_days: toInt(form.sell_confirm_days, PARAMS_DEFAULT.sell_confirm_days),
+    rotate_score_delta: toFloat(form.rotate_score_delta, PARAMS_DEFAULT.rotate_score_delta),
+    rotate_profit_ceiling: toFloat(form.rotate_profit_ceiling, PARAMS_DEFAULT.rotate_profit_ceiling),
+    min_hold_days_before_rotate: toInt(form.min_hold_days_before_rotate, PARAMS_DEFAULT.min_hold_days_before_rotate),
+    score_ceiling: toFloat(form.score_ceiling, PARAMS_DEFAULT.score_ceiling),
+    slot_min_scale: toFloat(form.slot_min_scale, PARAMS_DEFAULT.slot_min_scale),
+    min_gross_exposure: toFloat(form.min_gross_exposure, PARAMS_DEFAULT.min_gross_exposure),
+    market_exposure_floor: toFloat(form.market_exposure_floor, PARAMS_DEFAULT.market_exposure_floor),
+    allow_buy_in_risk_off: Boolean(form.allow_buy_in_risk_off),
+    allowed_boards: allowedBoards.length > 0 ? allowedBoards : PARAMS_DEFAULT.allowed_boards,
+    enable_buy_tech_filter: Boolean(form.enable_buy_tech_filter),
+    entry_require_trend_alignment: Boolean(form.entry_require_trend_alignment),
+    entry_require_macd_positive: Boolean(form.entry_require_macd_positive),
+    entry_min_sector_strength: toFloat(form.entry_min_sector_strength, PARAMS_DEFAULT.entry_min_sector_strength),
+    entry_sector_strength_quantile: toFloat(
+      form.entry_sector_strength_quantile,
+      PARAMS_DEFAULT.entry_sector_strength_quantile
+    ),
+    entry_rsi_min: toFloat(form.entry_rsi_min, PARAMS_DEFAULT.entry_rsi_min),
+    entry_rsi_max: toFloat(form.entry_rsi_max, PARAMS_DEFAULT.entry_rsi_max),
+    entry_max_pct_chg: toFloat(form.entry_max_pct_chg, PARAMS_DEFAULT.entry_max_pct_chg),
+    factor_weights: {
+      stock_trend: toFloat(form.factor_weights_stock_trend, PARAMS_DEFAULT.factor_weights.stock_trend),
+      sector_strength: toFloat(
+        form.factor_weights_sector_strength,
+        PARAMS_DEFAULT.factor_weights.sector_strength
+      ),
+      value_quality: toFloat(form.factor_weights_value_quality, PARAMS_DEFAULT.factor_weights.value_quality),
+      liquidity_stability: toFloat(
+        form.factor_weights_liquidity_stability,
+        PARAMS_DEFAULT.factor_weights.liquidity_stability
+      ),
+    },
+    signal_store_topk: toInt(form.signal_store_topk, PARAMS_DEFAULT.signal_store_topk),
+    use_member_sector_mapping: Boolean(form.use_member_sector_mapping),
+    sector_source_weights: {
+      sw: toFloat(form.sector_source_weights_sw, PARAMS_DEFAULT.sector_source_weights.sw),
+      ci: toFloat(form.sector_source_weights_ci, PARAMS_DEFAULT.sector_source_weights.ci),
+    },
+    max_daily_buy_count: toInt(form.max_daily_buy_count, PARAMS_DEFAULT.max_daily_buy_count),
+    max_daily_sell_count: toInt(form.max_daily_sell_count, PARAMS_DEFAULT.max_daily_sell_count),
+    max_daily_trade_count: toInt(form.max_daily_trade_count, PARAMS_DEFAULT.max_daily_trade_count),
+    max_daily_rotate_count: toInt(form.max_daily_rotate_count, PARAMS_DEFAULT.max_daily_rotate_count),
+    reentry_cooldown_days: toInt(form.reentry_cooldown_days, PARAMS_DEFAULT.reentry_cooldown_days),
+    annual_trade_window_days: toInt(form.annual_trade_window_days, PARAMS_DEFAULT.annual_trade_window_days),
+    max_annual_trade_count: toInt(form.max_annual_trade_count, PARAMS_DEFAULT.max_annual_trade_count),
+    max_annual_buy_count: toInt(form.max_annual_buy_count, PARAMS_DEFAULT.max_annual_buy_count),
+    max_annual_sell_count: toInt(form.max_annual_sell_count, PARAMS_DEFAULT.max_annual_sell_count),
+  };
+};
+
+const formatParamsSnapshotJson = (snapshot) => JSON.stringify(snapshot || {}, null, 2);
+
+const parseParamsSnapshotJson = (text) => {
+  const parsed = JSON.parse(String(text || "").trim() || "{}");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("params_snapshot 必须是 JSON 对象");
+  }
+  return parsed;
 };
 
 export default function StrategiesPage() {
@@ -38,45 +308,48 @@ export default function StrategiesPage() {
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [versionCodeRef, setVersionCodeRef] = useState("main");
   const [versionChangeLog, setVersionChangeLog] = useState("");
-  const [paramsText, setParamsText] = useState(
-    JSON.stringify(
-      {
-        strategy_key: "multifactor_v1",
-        score_direction: "reverse",
-        buy_threshold: 62,
-        sell_threshold: 43,
-        max_positions: 6,
-        slot_weight: 0.22,
-        sector_max: 0.45,
-        min_avg_amount_20d: 25000,
-        market_exposure: { risk_on: 1.0, neutral: 0.95, risk_off: 0.65 },
-        stop_loss_pct: 0.1,
-        trail_stop_pct: 0.12,
-        max_hold_days: 60,
-        sell_confirm_days: 2,
-        rotate_score_delta: 10,
-        rotate_profit_ceiling: 0.03,
-        min_hold_days_before_rotate: 5,
-        score_ceiling: 100,
-        slot_min_scale: 0.6,
-        min_gross_exposure: 0.75,
-        allowed_boards: ["sh_main", "sz_main", "star", "gem"],
-        enable_buy_tech_filter: false,
-        signal_store_topk: 100,
-      },
-      null,
-      2
-    )
+  const [paramsForm, setParamsForm] = useState(() => buildParamsForm(PARAMS_DEFAULT));
+  const [paramsJsonText, setParamsJsonText] = useState(() =>
+    formatParamsSnapshotJson(buildParamsSnapshot(buildParamsForm(PARAMS_DEFAULT)))
   );
+  const [paramsJsonError, setParamsJsonError] = useState("");
+  const [paramsSeedKey, setParamsSeedKey] = useState("");
+  const [paramsFormDirty, setParamsFormDirty] = useState(false);
 
   const [runStartDate, setRunStartDate] = useState("20250101");
   const [runEndDate, setRunEndDate] = useState("20260206");
   const [runType, setRunType] = useState("range");
   const [runCreating, setRunCreating] = useState(false);
   const [paramsModalRun, setParamsModalRun] = useState(null);
+  const [strategyModalOpen, setStrategyModalOpen] = useState(false);
+  const [versionModalOpen, setVersionModalOpen] = useState(false);
   const [deletingRunId, setDeletingRunId] = useState("");
+  const [strategiesCollapsed, setStrategiesCollapsed] = useState(false);
+  const [versionsCollapsed, setVersionsCollapsed] = useState(false);
 
   const totalPages = useMemo(() => Math.max(Math.ceil(total / pageSize), 1), [total, pageSize]);
+
+  const setParamValue = (key, value) => {
+    setParamsForm((prev) => {
+      const next = { ...prev, [key]: value };
+      setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(next)));
+      return next;
+    });
+    setParamsJsonError("");
+    setParamsFormDirty(true);
+  };
+
+  const handleParamsJsonChange = (value) => {
+    setParamsJsonText(value);
+    setParamsFormDirty(true);
+    try {
+      const parsed = parseParamsSnapshotJson(value);
+      setParamsForm(buildParamsForm(parsed));
+      setParamsJsonError("");
+    } catch (err) {
+      setParamsJsonError(err.message || "JSON 格式错误");
+    }
+  };
 
   const loadStrategies = async (targetPage = page) => {
     setLoading(true);
@@ -118,9 +391,7 @@ export default function StrategiesPage() {
       setSelectedRunIds([]);
       if (versionItems.length > 0) {
         setSelectedVersionId((prev) =>
-          versionItems.find((item) => item.strategy_version_id === prev)
-            ? prev
-            : versionItems[0].strategy_version_id
+          versionItems.find((item) => item.strategy_version_id === prev) ? prev : versionItems[0].strategy_version_id
         );
       } else {
         setSelectedVersionId("");
@@ -138,6 +409,22 @@ export default function StrategiesPage() {
     if (!selectedStrategyId) return;
     loadStrategyDetails(selectedStrategyId);
   }, [selectedStrategyId]);
+
+  useEffect(() => {
+    if (!selectedStrategyId) return;
+    const latest = versions[0];
+    const nextSeedKey = `${selectedStrategyId}:${latest?.strategy_version_id || "default"}`;
+    if (nextSeedKey !== paramsSeedKey || !paramsFormDirty) {
+      if (nextSeedKey !== paramsSeedKey) {
+        const nextForm = buildParamsForm(latest?.params_snapshot || PARAMS_DEFAULT);
+        setParamsForm(nextForm);
+        setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(nextForm)));
+        setParamsJsonError("");
+        setParamsFormDirty(false);
+        setParamsSeedKey(nextSeedKey);
+      }
+    }
+  }, [selectedStrategyId, versions, paramsSeedKey, paramsFormDirty]);
 
   const createStrategy = async (event) => {
     event.preventDefault();
@@ -160,6 +447,7 @@ export default function StrategiesPage() {
       setNewName("");
       setNewDescription("");
       setNewOwner("");
+      setStrategyModalOpen(false);
       await loadStrategies(1);
       setPage(1);
       setSelectedStrategyId(item.strategy_id);
@@ -174,9 +462,12 @@ export default function StrategiesPage() {
     setError("");
     let paramsSnapshot = {};
     try {
-      paramsSnapshot = JSON.parse(paramsText || "{}");
+      paramsSnapshot = parseParamsSnapshotJson(paramsJsonText);
+      setParamsJsonError("");
     } catch (err) {
-      setError("params_snapshot 不是合法 JSON");
+      const message = err.message || "params_snapshot JSON 解析失败";
+      setParamsJsonError(message);
+      setError(message);
       return;
     }
     try {
@@ -197,6 +488,8 @@ export default function StrategiesPage() {
       setVersionChangeLog("");
       setSelectedVersionId(item.strategy_version_id);
       await loadStrategyDetails(selectedStrategyId);
+      setVersionModalOpen(false);
+      window.alert("版本发布成功");
     } catch (err) {
       setError(err.message || "发布版本失败");
     }
@@ -259,6 +552,20 @@ export default function StrategiesPage() {
     setParamsModalRun(null);
   };
 
+  const closeVersionModal = () => {
+    setVersionModalOpen(false);
+  };
+
+  const openVersionModal = () => {
+    setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(paramsForm)));
+    setParamsJsonError("");
+    setVersionModalOpen(true);
+  };
+
+  const closeStrategyModal = () => {
+    setStrategyModalOpen(false);
+  };
+
   const deleteRun = async (runId) => {
     if (!runId) return;
     const confirmed = window.confirm(`确认删除回测 Run ${runId} 吗？该操作会同时删除净值、交易、持仓、信号明细。`);
@@ -281,13 +588,21 @@ export default function StrategiesPage() {
     }
   };
 
+  const workspaceClass = [
+    "strategy-workspace",
+    strategiesCollapsed ? "is-strategies-collapsed" : "",
+    versionsCollapsed ? "is-versions-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <main className="page">
       <header className="header">
         <div>
           <p className="eyebrow">Strategy Center</p>
           <h1>策略中心</h1>
-          <p className="subtitle">管理策略、版本、历史回测并进行效果对比</p>
+          <p className="subtitle">左侧策略，中间版本，右侧回测</p>
         </div>
         <div className="header-actions">
           <button className="primary" onClick={() => loadStrategies(page)} disabled={loading}>
@@ -298,237 +613,907 @@ export default function StrategiesPage() {
 
       {error ? <div className="error">{error}</div> : null}
 
-      <section className="panel" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>创建策略</h3>
-        <form className="form-grid" onSubmit={createStrategy}>
-          <label className="field">
-            <span>名称</span>
-            <input value={newName} onChange={(e) => setNewName(e.target.value)} required />
-          </label>
-          <label className="field">
-            <span>Owner</span>
-            <input value={newOwner} onChange={(e) => setNewOwner(e.target.value)} />
-          </label>
-          <label className="field" style={{ gridColumn: "1 / -1" }}>
-            <span>描述</span>
-            <input value={newDescription} onChange={(e) => setNewDescription(e.target.value)} />
-          </label>
-          <div className="form-actions">
-            <button className="primary" type="submit" disabled={loading || !newName.trim()}>
-              新建策略
+      <div className={workspaceClass}>
+        {strategiesCollapsed ? (
+          <section className="strategy-column strategy-column--strategies strategy-column--collapsed-rail">
+            <button
+              type="button"
+              className="column-rail-btn"
+              onClick={() => setStrategiesCollapsed(false)}
+              title="展开策略列"
+            >
+              <span className="column-rail-icon">›</span>
+              <span className="column-rail-label">策略</span>
             </button>
-          </div>
-        </form>
-      </section>
+          </section>
+        ) : (
+          <section className="strategy-column strategy-column--strategies">
+          <section className="panel">
+            <div className="panel-title-row">
+              <h3 style={{ margin: 0 }}>策略列表</h3>
+              <div className="panel-title-actions">
+                <span className="subtitle" style={{ margin: 0 }}>
+                  点击行可切换策略
+                </span>
+                <button type="button" className="primary" onClick={() => setStrategyModalOpen(true)}>
+                  创建策略
+                </button>
+                <button type="button" className="link-button" onClick={() => setStrategiesCollapsed(true)}>
+                  收起策略
+                </button>
+              </div>
+            </div>
+            <div className="table-wrap compact-table strategies-table" style={{ marginTop: 12 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>策略ID</th>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>最近Run</th>
+                    <th>累计收益</th>
+                    <th>更新时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="empty">
+                        暂无策略
+                      </td>
+                    </tr>
+                  ) : (
+                    items.map((item) => (
+                      <tr
+                        key={item.strategy_id}
+                        className={selectedStrategyId === item.strategy_id ? "is-selected" : ""}
+                        onClick={() => setSelectedStrategyId(item.strategy_id)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td>{item.strategy_id}</td>
+                        <td>{item.name}</td>
+                        <td>{item.status || "-"}</td>
+                        <td>{item.latest_run_id || "-"}</td>
+                        <td>{formatPct(item?.latest_summary?.total_return)}</td>
+                        <td>{formatDateTime(item.updated_at)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-      <section className="table-wrap" style={{ marginBottom: 24 }}>
-        <table>
-          <thead>
-            <tr>
-              <th>策略ID</th>
-              <th>名称</th>
-              <th>状态</th>
-              <th>最近Run</th>
-              <th>累计收益</th>
-              <th>更新时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="empty">
-                  暂无策略
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr
-                  key={item.strategy_id}
-                  onClick={() => setSelectedStrategyId(item.strategy_id)}
-                  style={{
-                    cursor: "pointer",
-                    background:
-                      selectedStrategyId === item.strategy_id
-                        ? "rgba(226,59,46,0.08)"
-                        : "transparent",
+          <div className="pagination">
+            <span>
+              共 {total} 条，第 {page} / {totalPages} 页
+            </span>
+            <div className="pager-actions">
+              <button type="button" disabled={page <= 1} onClick={() => setPage((v) => Math.max(v - 1, 1))}>
+                上一页
+              </button>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((v) => Math.min(v + 1, totalPages))}
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        </section>
+        )}
+
+        {versionsCollapsed ? (
+          <section className="strategy-column strategy-column--versions strategy-column--collapsed-rail">
+            <button
+              type="button"
+              className="column-rail-btn"
+              onClick={() => setVersionsCollapsed(false)}
+              title="展开版本列"
+            >
+              <span className="column-rail-icon">›</span>
+              <span className="column-rail-label">版本</span>
+            </button>
+          </section>
+        ) : (
+          <section className="strategy-column strategy-column--versions">
+          <section className="panel">
+            <div className="panel-title-row">
+              <h3 style={{ margin: 0 }}>版本列表</h3>
+              <div className="panel-title-actions">
+                <span className="subtitle" style={{ margin: 0 }}>
+                  当前策略: {selectedStrategyId || "-"}
+                </span>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={openVersionModal}
+                  disabled={!selectedStrategyId}
+                >
+                  创建版本
+                </button>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => {
+                    setVersionModalOpen(false);
+                    setVersionsCollapsed(true);
                   }}
                 >
-                  <td>{item.strategy_id}</td>
-                  <td>{item.name}</td>
-                  <td>{item.status || "-"}</td>
-                  <td>{item.latest_run_id || "-"}</td>
-                  <td>{formatPct(item?.latest_summary?.total_return)}</td>
-                  <td>{formatDateTime(item.updated_at)}</td>
-                </tr>
-              ))
+                  收起版本
+                </button>
+              </div>
+            </div>
+            {selectedStrategyId ? (
+              <div className="table-wrap compact-table versions-table" style={{ marginTop: 12 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>版本</th>
+                      <th>版本ID</th>
+                      <th>Code Ref</th>
+                      <th>创建时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {versions.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="empty">
+                          暂无版本
+                        </td>
+                      </tr>
+                    ) : (
+                      versions.map((item) => (
+                        <tr
+                          key={item.strategy_version_id}
+                          className={selectedVersionId === item.strategy_version_id ? "is-selected" : ""}
+                          onClick={() => setSelectedVersionId(item.strategy_version_id)}
+                          style={{ cursor: "pointer" }}
+                        >
+                          <td>{item.version || "-"}</td>
+                          <td>{item.strategy_version_id}</td>
+                          <td>{item.code_ref || "-"}</td>
+                          <td>{formatDateTime(item.created_at)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty" style={{ marginTop: 12 }}>
+                请先在左侧选择策略
+              </div>
             )}
-          </tbody>
-        </table>
-      </section>
+          </section>
 
-      <div className="pagination" style={{ marginBottom: 24 }}>
-        <span>
-          共 {total} 条，第 {page} / {totalPages} 页
-        </span>
-        <div className="pager-actions">
-          <button type="button" disabled={page <= 1} onClick={() => setPage((v) => Math.max(v - 1, 1))}>
-            上一页
-          </button>
-          <button
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((v) => Math.min(v + 1, totalPages))}
-          >
-            下一页
-          </button>
-        </div>
-      </div>
+          {versionModalOpen ? (
+            <div
+              className="modal-backdrop"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) closeVersionModal();
+              }}
+            >
+              <div className="modal-card modal-card--version-create">
+                <div className="modal-header">
+                  <h3 style={{ margin: 0 }}>创建版本（策略: {selectedStrategyId || "-"}）</h3>
+                  <button type="button" className="link-button" onClick={closeVersionModal}>
+                    关闭
+                  </button>
+                </div>
+                {selectedStrategyId ? (
+                  <form onSubmit={createVersion} className="version-form-layout">
+                <div className="version-modal-layout">
+                <div className="version-form-main">
+                <div className="form-grid version-meta-grid" style={{ marginBottom: 10 }}>
+                  <label className="field">
+                    <span>Code Ref</span>
+                    <input value={versionCodeRef} onChange={(e) => setVersionCodeRef(e.target.value)} />
+                  </label>
+                  <label className="field">
+                    <span>变更说明</span>
+                    <input value={versionChangeLog} onChange={(e) => setVersionChangeLog(e.target.value)} />
+                  </label>
+                </div>
 
-      {selectedStrategyId ? (
-        <>
-          <section className="panel" style={{ marginBottom: 20 }}>
-            <h3 style={{ marginTop: 0 }}>发布版本（策略: {selectedStrategyId}）</h3>
-            <form onSubmit={createVersion}>
-              <div className="form-grid">
-                <label className="field">
-                  <span>Code Ref</span>
-                  <input value={versionCodeRef} onChange={(e) => setVersionCodeRef(e.target.value)} />
-                </label>
-                <label className="field">
-                  <span>变更说明</span>
-                  <input value={versionChangeLog} onChange={(e) => setVersionChangeLog(e.target.value)} />
-                </label>
-                <label className="field" style={{ gridColumn: "1 / -1" }}>
-                  <span>params_snapshot(JSON)</span>
-                  <textarea
-                    rows={8}
-                    value={paramsText}
-                    onChange={(e) => setParamsText(e.target.value)}
-                    style={{ width: "100%", borderRadius: 10, border: "1px solid var(--border-light)", padding: 10 }}
-                  />
-                </label>
-                <div className="form-actions">
+                <div className="version-params-grid">
+                  <label className="field">
+                    <span>strategy_key</span>
+                    <small className="field-hint">策略引擎标识，通常为 multifactor_v1</small>
+                    <input value={paramsForm.strategy_key} onChange={(e) => setParamValue("strategy_key", e.target.value)} />
+                  </label>
+                  <label className="field">
+                    <span>score_direction</span>
+                    <small className="field-hint">打分方向，reverse=分数越低越好</small>
+                    <select
+                      value={paramsForm.score_direction}
+                      onChange={(e) => setParamValue("score_direction", e.target.value)}
+                    >
+                      <option value="reverse">reverse</option>
+                      <option value="normal">normal</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>buy_threshold</span>
+                    <small className="field-hint">买入阈值，分数达到该值才考虑买入</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.buy_threshold}
+                      onChange={(e) => setParamValue("buy_threshold", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>sell_threshold</span>
+                    <small className="field-hint">卖出阈值，分数低于该值触发卖出</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.sell_threshold}
+                      onChange={(e) => setParamValue("sell_threshold", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_positions</span>
+                    <small className="field-hint">最大持仓股票数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_positions}
+                      onChange={(e) => setParamValue("max_positions", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>slot_weight</span>
+                    <small className="field-hint">单仓基础权重</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.slot_weight}
+                      onChange={(e) => setParamValue("slot_weight", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>sector_max</span>
+                    <small className="field-hint">单行业最大仓位上限</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.sector_max}
+                      onChange={(e) => setParamValue("sector_max", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>min_avg_amount_20d</span>
+                    <small className="field-hint">20日平均成交额下限（万元）</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.min_avg_amount_20d}
+                      onChange={(e) => setParamValue("min_avg_amount_20d", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>market_exposure.risk_on</span>
+                    <small className="field-hint">强势市场仓位系数</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.market_exposure_risk_on}
+                      onChange={(e) => setParamValue("market_exposure_risk_on", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>market_exposure.neutral</span>
+                    <small className="field-hint">震荡市场仓位系数</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.market_exposure_neutral}
+                      onChange={(e) => setParamValue("market_exposure_neutral", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>market_exposure.risk_off</span>
+                    <small className="field-hint">弱势市场仓位系数</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.market_exposure_risk_off}
+                      onChange={(e) => setParamValue("market_exposure_risk_off", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>stop_loss_pct</span>
+                    <small className="field-hint">固定止损比例</small>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={paramsForm.stop_loss_pct}
+                      onChange={(e) => setParamValue("stop_loss_pct", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>trail_stop_pct</span>
+                    <small className="field-hint">移动止损比例</small>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={paramsForm.trail_stop_pct}
+                      onChange={(e) => setParamValue("trail_stop_pct", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_hold_days</span>
+                    <small className="field-hint">最大持有天数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_hold_days}
+                      onChange={(e) => setParamValue("max_hold_days", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>sell_confirm_days</span>
+                    <small className="field-hint">卖出确认天数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.sell_confirm_days}
+                      onChange={(e) => setParamValue("sell_confirm_days", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>rotate_score_delta</span>
+                    <small className="field-hint">换仓最低分差</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.rotate_score_delta}
+                      onChange={(e) => setParamValue("rotate_score_delta", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>rotate_profit_ceiling</span>
+                    <small className="field-hint">换仓时原仓最大收益限制</small>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={paramsForm.rotate_profit_ceiling}
+                      onChange={(e) => setParamValue("rotate_profit_ceiling", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>min_hold_days_before_rotate</span>
+                    <small className="field-hint">持有至少多少天才允许换仓</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.min_hold_days_before_rotate}
+                      onChange={(e) => setParamValue("min_hold_days_before_rotate", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>score_ceiling</span>
+                    <small className="field-hint">打分上限，用于仓位缩放</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.score_ceiling}
+                      onChange={(e) => setParamValue("score_ceiling", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>slot_min_scale</span>
+                    <small className="field-hint">单仓最小缩放比例</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.slot_min_scale}
+                      onChange={(e) => setParamValue("slot_min_scale", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>min_gross_exposure</span>
+                    <small className="field-hint">组合最低总仓位</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.min_gross_exposure}
+                      onChange={(e) => setParamValue("min_gross_exposure", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>market_exposure_floor</span>
+                    <small className="field-hint">市场仓位下限</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.market_exposure_floor}
+                      onChange={(e) => setParamValue("market_exposure_floor", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>entry_min_sector_strength</span>
+                    <small className="field-hint">入场最小行业强度</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.entry_min_sector_strength}
+                      onChange={(e) => setParamValue("entry_min_sector_strength", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>entry_sector_strength_quantile</span>
+                    <small className="field-hint">板块强度分位过滤(0~1)</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.entry_sector_strength_quantile}
+                      onChange={(e) => setParamValue("entry_sector_strength_quantile", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>entry_rsi_min</span>
+                    <small className="field-hint">入场 RSI 下限</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.entry_rsi_min}
+                      onChange={(e) => setParamValue("entry_rsi_min", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>entry_rsi_max</span>
+                    <small className="field-hint">入场 RSI 上限</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.entry_rsi_max}
+                      onChange={(e) => setParamValue("entry_rsi_max", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>entry_max_pct_chg</span>
+                    <small className="field-hint">入场当日涨幅上限(%)</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.entry_max_pct_chg}
+                      onChange={(e) => setParamValue("entry_max_pct_chg", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>factor_weights.stock_trend</span>
+                    <small className="field-hint">评分权重：个股趋势</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.factor_weights_stock_trend}
+                      onChange={(e) => setParamValue("factor_weights_stock_trend", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>factor_weights.sector_strength</span>
+                    <small className="field-hint">评分权重：板块强度</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.factor_weights_sector_strength}
+                      onChange={(e) => setParamValue("factor_weights_sector_strength", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>factor_weights.value_quality</span>
+                    <small className="field-hint">评分权重：估值质量</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.factor_weights_value_quality}
+                      onChange={(e) => setParamValue("factor_weights_value_quality", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>factor_weights.liquidity_stability</span>
+                    <small className="field-hint">评分权重：流动性稳定</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.factor_weights_liquidity_stability}
+                      onChange={(e) => setParamValue("factor_weights_liquidity_stability", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>signal_store_topk</span>
+                    <small className="field-hint">每日保存信号条数上限</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.signal_store_topk}
+                      onChange={(e) => setParamValue("signal_store_topk", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>sector_source_weights.sw</span>
+                    <small className="field-hint">申万强度权重</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.sector_source_weights_sw}
+                      onChange={(e) => setParamValue("sector_source_weights_sw", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>sector_source_weights.ci</span>
+                    <small className="field-hint">中信强度权重</small>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paramsForm.sector_source_weights_ci}
+                      onChange={(e) => setParamValue("sector_source_weights_ci", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_daily_buy_count</span>
+                    <small className="field-hint">单日最多买入笔数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_daily_buy_count}
+                      onChange={(e) => setParamValue("max_daily_buy_count", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_daily_sell_count</span>
+                    <small className="field-hint">单日最多卖出笔数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_daily_sell_count}
+                      onChange={(e) => setParamValue("max_daily_sell_count", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_daily_trade_count</span>
+                    <small className="field-hint">单日最多总交易笔数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_daily_trade_count}
+                      onChange={(e) => setParamValue("max_daily_trade_count", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_daily_rotate_count</span>
+                    <small className="field-hint">单日最多换仓次数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_daily_rotate_count}
+                      onChange={(e) => setParamValue("max_daily_rotate_count", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>reentry_cooldown_days</span>
+                    <small className="field-hint">卖出后冷却天数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.reentry_cooldown_days}
+                      onChange={(e) => setParamValue("reentry_cooldown_days", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>annual_trade_window_days</span>
+                    <small className="field-hint">滚动窗口交易日数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.annual_trade_window_days}
+                      onChange={(e) => setParamValue("annual_trade_window_days", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_annual_trade_count</span>
+                    <small className="field-hint">窗口内最多总交易笔数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_annual_trade_count}
+                      onChange={(e) => setParamValue("max_annual_trade_count", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_annual_buy_count</span>
+                    <small className="field-hint">窗口内最多买入笔数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_annual_buy_count}
+                      onChange={(e) => setParamValue("max_annual_buy_count", e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>max_annual_sell_count</span>
+                    <small className="field-hint">窗口内最多卖出笔数</small>
+                    <input
+                      type="number"
+                      step="1"
+                      value={paramsForm.max_annual_sell_count}
+                      onChange={(e) => setParamValue("max_annual_sell_count", e.target.value)}
+                    />
+                  </label>
+                  <label className="field checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={paramsForm.enable_buy_tech_filter}
+                      onChange={(e) => setParamValue("enable_buy_tech_filter", e.target.checked)}
+                    />
+                    <div>
+                      <span>enable_buy_tech_filter</span>
+                      <small className="field-hint">是否启用买入技术面过滤</small>
+                    </div>
+                  </label>
+                  <label className="field checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={paramsForm.allow_buy_in_risk_off}
+                      onChange={(e) => setParamValue("allow_buy_in_risk_off", e.target.checked)}
+                    />
+                    <div>
+                      <span>allow_buy_in_risk_off</span>
+                      <small className="field-hint">risk_off 阶段是否允许新开仓</small>
+                    </div>
+                  </label>
+                  <label className="field checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={paramsForm.entry_require_trend_alignment}
+                      onChange={(e) => setParamValue("entry_require_trend_alignment", e.target.checked)}
+                    />
+                    <div>
+                      <span>entry_require_trend_alignment</span>
+                      <small className="field-hint">入场要求 close&gt;ma20&gt;ma60</small>
+                    </div>
+                  </label>
+                  <label className="field checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={paramsForm.entry_require_macd_positive}
+                      onChange={(e) => setParamValue("entry_require_macd_positive", e.target.checked)}
+                    />
+                    <div>
+                      <span>entry_require_macd_positive</span>
+                      <small className="field-hint">入场要求 MACD 柱线为正</small>
+                    </div>
+                  </label>
+                  <label className="field checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={paramsForm.use_member_sector_mapping}
+                      onChange={(e) => setParamValue("use_member_sector_mapping", e.target.checked)}
+                    />
+                    <div>
+                      <span>use_member_sector_mapping</span>
+                      <small className="field-hint">优先按成分映射行业强度</small>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="board-options">
+                  <div className="board-options-title">allowed_boards</div>
+                  <div className="board-options-grid">
+                    {BOARD_OPTIONS.map((item) => (
+                      <label key={item.value} className="board-option-item">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(paramsForm[`allowed_boards_${item.value}`])}
+                          onChange={(e) => setParamValue(`allowed_boards_${item.value}`, e.target.checked)}
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-actions version-submit-row" style={{ marginTop: 12 }}>
                   <button className="primary" type="submit">
                     发布版本
                   </button>
                 </div>
+                </div>
+
+                <aside className="version-json-panel">
+                  <div className="version-json-header">
+                    <span className="version-json-title">params_snapshot (JSON)</span>
+                    <span className="version-json-tip">提交以右侧 JSON 为准</span>
+                  </div>
+                  <textarea
+                    className="version-json-textarea"
+                    value={paramsJsonText}
+                    onChange={(e) => handleParamsJsonChange(e.target.value)}
+                    spellCheck={false}
+                  />
+                  {paramsJsonError ? <div className="version-json-error">{paramsJsonError}</div> : null}
+                </aside>
+                </div>
+                  </form>
+                ) : (
+                  <div className="empty">请先在左侧选择策略</div>
+                )}
               </div>
-            </form>
+            </div>
+          ) : null}
+        </section>
+        )}
+
+        <section className="strategy-column strategy-column--runs">
+          <section className="panel">
+            <h3 style={{ marginTop: 0 }}>创建回测</h3>
+            {selectedStrategyId ? (
+              <form className="form-grid" onSubmit={createRunMeta}>
+                <label className="field">
+                  <span>版本</span>
+                  <select value={selectedVersionId} onChange={(e) => setSelectedVersionId(e.target.value)} required>
+                    <option value="">请选择版本</option>
+                    {versions.map((item) => (
+                      <option key={item.strategy_version_id} value={item.strategy_version_id}>
+                        {item.version} ({item.strategy_version_id})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Run Type</span>
+                  <select value={runType} onChange={(e) => setRunType(e.target.value)}>
+                    <option value="range">range</option>
+                    <option value="full_history">full_history</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>开始日期</span>
+                  <input value={runStartDate} onChange={(e) => setRunStartDate(e.target.value)} required />
+                </label>
+                <label className="field">
+                  <span>结束日期</span>
+                  <input value={runEndDate} onChange={(e) => setRunEndDate(e.target.value)} required />
+                </label>
+                <div className="form-actions">
+                  <button className="primary" type="submit" disabled={runCreating || !selectedVersionId}>
+                    {runCreating ? "创建中..." : "创建回测元信息"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="empty">请先在左侧选择策略</div>
+            )}
           </section>
 
-          <section className="panel" style={{ marginBottom: 20 }}>
-            <h3 style={{ marginTop: 0 }}>创建回测Run</h3>
-            <form className="form-grid" onSubmit={createRunMeta}>
+          <section className="panel">
+            <div className="panel-title-row">
+              <h3 style={{ margin: 0 }}>回测列表</h3>
+              <span className="subtitle" style={{ margin: 0 }}>
+                当前策略: {selectedStrategyId || "-"}
+              </span>
+            </div>
+            {selectedStrategyId ? (
+              <>
+                <div className="table-wrap compact-table" style={{ marginTop: 12 }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>对比</th>
+                        <th>Run ID</th>
+                        <th>版本</th>
+                        <th>状态</th>
+                        <th>区间</th>
+                        <th>累计收益</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {runs.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="empty">
+                            暂无回测记录
+                          </td>
+                        </tr>
+                      ) : (
+                        runs.map((item) => (
+                          <tr key={item.run_id}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={selectedRunIds.includes(item.run_id)}
+                                onChange={(e) => toggleRunSelect(item.run_id, e.target.checked)}
+                              />
+                            </td>
+                            <td>
+                              <Link className="link-button" href={`/backtests/${item.run_id}`}>
+                                {item.run_id}
+                              </Link>
+                            </td>
+                            <td>{item.strategy_version_id}</td>
+                            <td>{item.status}</td>
+                            <td>
+                              {item.start_date} ~ {item.end_date}
+                            </td>
+                            <td>{formatPct(item?.summary_metrics?.total_return)}</td>
+                            <td>{formatDateTime(item.created_at)}</td>
+                            <td>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <button type="button" className="link-button" onClick={() => showRunParams(item)}>
+                                  参数
+                                </button>
+                                <button
+                                  type="button"
+                                  className="danger-button"
+                                  onClick={() => deleteRun(item.run_id)}
+                                  disabled={deletingRunId === item.run_id || item.status === "running"}
+                                >
+                                  {deletingRunId === item.run_id ? "删除中..." : "删除"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <button className="primary" type="button" disabled={selectedRunIds.length < 2} onClick={goCompare}>
+                    对比已选 Run（{selectedRunIds.length}/5）
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="empty" style={{ marginTop: 12 }}>
+                请先在左侧选择策略
+              </div>
+            )}
+          </section>
+        </section>
+      </div>
+
+      {strategyModalOpen ? (
+        <div
+          className="modal-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeStrategyModal();
+          }}
+        >
+          <div className="modal-card modal-card--strategy-create">
+            <div className="modal-header">
+              <h3 style={{ margin: 0 }}>创建策略</h3>
+              <button type="button" className="link-button" onClick={closeStrategyModal}>
+                关闭
+              </button>
+            </div>
+            <form className="form-grid" onSubmit={createStrategy}>
               <label className="field">
-                <span>版本</span>
-                <select value={selectedVersionId} onChange={(e) => setSelectedVersionId(e.target.value)} required>
-                  <option value="">请选择版本</option>
-                  {versions.map((item) => (
-                    <option key={item.strategy_version_id} value={item.strategy_version_id}>
-                      {item.version} ({item.strategy_version_id})
-                    </option>
-                  ))}
-                </select>
+                <span>名称</span>
+                <input value={newName} onChange={(e) => setNewName(e.target.value)} required />
               </label>
               <label className="field">
-                <span>Run Type</span>
-                <select value={runType} onChange={(e) => setRunType(e.target.value)}>
-                  <option value="range">range</option>
-                  <option value="full_history">full_history</option>
-                </select>
+                <span>Owner</span>
+                <input value={newOwner} onChange={(e) => setNewOwner(e.target.value)} />
               </label>
-              <label className="field">
-                <span>开始日期</span>
-                <input value={runStartDate} onChange={(e) => setRunStartDate(e.target.value)} required />
-              </label>
-              <label className="field">
-                <span>结束日期</span>
-                <input value={runEndDate} onChange={(e) => setRunEndDate(e.target.value)} required />
+              <label className="field" style={{ gridColumn: "1 / -1" }}>
+                <span>描述</span>
+                <input value={newDescription} onChange={(e) => setNewDescription(e.target.value)} />
               </label>
               <div className="form-actions">
-                <button className="primary" type="submit" disabled={runCreating || !selectedVersionId}>
-                  {runCreating ? "创建中..." : "创建回测元信息"}
+                <button className="primary" type="submit" disabled={loading || !newName.trim()}>
+                  新建策略
                 </button>
               </div>
             </form>
-          </section>
-
-          <section className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>对比</th>
-                  <th>Run ID</th>
-                  <th>版本</th>
-                  <th>状态</th>
-                  <th>区间</th>
-                  <th>累计收益</th>
-                  <th>创建时间</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="empty">
-                      暂无回测记录
-                    </td>
-                  </tr>
-                ) : (
-                  runs.map((item) => (
-                    <tr key={item.run_id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selectedRunIds.includes(item.run_id)}
-                          onChange={(e) => toggleRunSelect(item.run_id, e.target.checked)}
-                        />
-                      </td>
-                      <td>
-                        <a className="link-button" href={`/freedom/backtests/${item.run_id}`}>
-                          {item.run_id}
-                        </a>
-                      </td>
-                      <td>{item.strategy_version_id}</td>
-                      <td>{item.status}</td>
-                      <td>
-                        {item.start_date} ~ {item.end_date}
-                      </td>
-                      <td>{formatPct(item?.summary_metrics?.total_return)}</td>
-                      <td>{formatDateTime(item.created_at)}</td>
-                      <td>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button type="button" className="link-button" onClick={() => showRunParams(item)}>
-                            参数
-                          </button>
-                          <button
-                            type="button"
-                            className="danger-button"
-                            onClick={() => deleteRun(item.run_id)}
-                            disabled={deletingRunId === item.run_id || item.status === "running"}
-                          >
-                            {deletingRunId === item.run_id ? "删除中..." : "删除"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </section>
-
-          <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
-            <button
-              className="primary"
-              type="button"
-              disabled={selectedRunIds.length < 2}
-              onClick={goCompare}
-            >
-              对比已选 Run（{selectedRunIds.length}/5）
-            </button>
           </div>
-        </>
+        </div>
       ) : null}
 
       {paramsModalRun ? (

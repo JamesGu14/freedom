@@ -138,15 +138,22 @@ def list_backtest_trade_items(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     ts_code: str | None = Query(default=None),
+    trade_date: str | None = Query(default=None),
 ) -> dict[str, Any]:
     run = get_backtest_detail(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
+    normalized_trade_date: str | None = None
+    if trade_date:
+        normalized_trade_date = str(trade_date).strip().replace("-", "")
+        if len(normalized_trade_date) != 8 or not normalized_trade_date.isdigit():
+            raise HTTPException(status_code=400, detail="invalid trade_date, use YYYYMMDD or YYYY-MM-DD")
     items, total = get_backtest_trades(
         run_id=run_id,
         page=page,
         page_size=page_size,
         ts_code=ts_code,
+        trade_date=normalized_trade_date,
     )
     return {
         "run_id": run_id,

@@ -12,6 +12,7 @@ from app.api.routes.shenwan_industry import router as shenwan_industry_router
 from app.api.routes.stock_groups import router as stock_groups_router
 from app.api.routes.stocks import router as stocks_router
 from app.api.routes.strategies import router as strategies_router
+from app.api.routes.strategy_signals import router as strategy_signals_router
 from app.api.routes.users import router as users_router
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "stock_groups_router",
     "stocks_router",
     "strategies_router",
+    "strategy_signals_router",
     "users_router",
 ]

@@ -30,5 +30,4 @@ class MultiFactorV1Strategy:
     name = "多因子趋势增强V1"
 
     def score(self, context: StrategyContext) -> pd.DataFrame:
-        return build_stock_factor_scores(context.frame)
-
+        return build_stock_factor_scores(context.frame, context.params)

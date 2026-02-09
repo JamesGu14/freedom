@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import math
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,12 +47,27 @@ DEFAULT_BACKTEST_PARAMS: dict[str, Any] = {
     "sector_max": 0.40,
     "sell_confirm_days": 1,
     "signal_store_topk": 100,
-    "score_direction": "reverse",
+    "score_direction": "normal",
+    "factor_weights": {
+        "stock_trend": 0.35,
+        "sector_strength": 0.25,
+        "value_quality": 0.25,
+        "liquidity_stability": 0.15,
+    },
     "enable_buy_tech_filter": True,
+    "entry_require_trend_alignment": False,
+    "entry_require_macd_positive": False,
+    "entry_min_sector_strength": 0.0,
+    "entry_sector_strength_quantile": 0.0,
+    "entry_rsi_min": 0.0,
+    "entry_rsi_max": 100.0,
+    "entry_max_pct_chg": 100.0,
     "allowed_boards": ["sh_main", "sz_main", "star", "gem"],
     "score_ceiling": 100.0,
     "slot_min_scale": 0.6,
     "min_gross_exposure": 0.0,
+    "market_exposure_floor": 0.4,
+    "allow_buy_in_risk_off": True,
     "use_member_sector_mapping": True,
     "sector_source_weights": {"sw": 0.6, "ci": 0.4},
     "max_daily_buy_count": 99,
@@ -59,6 +75,10 @@ DEFAULT_BACKTEST_PARAMS: dict[str, Any] = {
     "max_daily_trade_count": 99,
     "max_daily_rotate_count": 99,
     "reentry_cooldown_days": 0,
+    "annual_trade_window_days": 252,
+    "max_annual_trade_count": 0,
+    "max_annual_buy_count": 0,
+    "max_annual_sell_count": 0,
 }
 
 
@@ -245,6 +265,131 @@ def _sell_order_priority(order: dict[str, Any]) -> tuple[int, float]:
     return (3, _to_float(order.get("score"), 0.0))
 
 
+def _append_reason_code(signal_rows: dict[str, dict[str, Any]], *, ts_code: str, reason_code: str) -> None:
+    row = signal_rows.get(ts_code)
+    if not row:
+        return
+    reason_codes = list(row.get("reason_codes") or [])
+    if reason_code not in reason_codes:
+        reason_codes.append(reason_code)
+    row["signal"] = "HOLD"
+    row["reason_codes"] = reason_codes
+
+
+def _throttle_sell_orders(
+    *,
+    sell_orders: list[dict[str, Any]],
+    signal_rows: dict[str, dict[str, Any]],
+    limit: int,
+    reason_code: str,
+) -> list[dict[str, Any]]:
+    if limit < 0 or len(sell_orders) <= limit:
+        return sell_orders
+    sorted_orders = sorted(sell_orders, key=_sell_order_priority)
+    keep_orders = sorted_orders[:limit]
+    keep_codes = {str(item.get("ts_code") or "") for item in keep_orders}
+    for item in sell_orders:
+        ts_code = str(item.get("ts_code") or "")
+        if ts_code and ts_code not in keep_codes:
+            _append_reason_code(signal_rows, ts_code=ts_code, reason_code=reason_code)
+    return keep_orders
+
+
+def _normalize_quantile(value: Any) -> float:
+    quantile = _to_float(value, 0.0)
+    if quantile > 1.0 and quantile <= 100.0:
+        quantile = quantile / 100.0
+    return max(min(quantile, 1.0), 0.0)
+
+
+def _apply_buy_quality_filters(
+    candidates: pd.DataFrame,
+    params: dict[str, Any],
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    meta: dict[str, Any] = {"sector_strength_quantile_threshold": None}
+    if candidates is None or candidates.empty:
+        return pd.DataFrame(), meta
+    data = candidates
+    if _to_bool(params.get("entry_require_trend_alignment"), False):
+        data = data[
+            (data["close"].fillna(0) > data["ma20"].fillna(0))
+            & (data["ma20"].fillna(0) > data["ma60"].fillna(0))
+        ]
+    if _to_bool(params.get("entry_require_macd_positive"), False):
+        data = data[data["macd_hist"].fillna(0) > 0]
+
+    min_sector_strength = max(_to_float(params.get("entry_min_sector_strength"), 0.0), 0.0)
+    if min_sector_strength > 0:
+        data = data[data["sector_strength"].fillna(0) >= min_sector_strength]
+
+    sector_quantile = _normalize_quantile(params.get("entry_sector_strength_quantile"))
+    if sector_quantile > 0 and not data.empty:
+        threshold = _to_float(data["sector_strength"].fillna(0.0).quantile(sector_quantile), 0.0)
+        meta["sector_strength_quantile_threshold"] = threshold
+        data = data[data["sector_strength"].fillna(0.0) >= threshold]
+
+    rsi_min = _to_float(params.get("entry_rsi_min"), 0.0)
+    rsi_max = _to_float(params.get("entry_rsi_max"), 100.0)
+    low, high = min(rsi_min, rsi_max), max(rsi_min, rsi_max)
+    if low > 0.0 or high < 100.0:
+        data = data[(data["rsi12"].fillna(50.0) >= low) & (data["rsi12"].fillna(50.0) <= high)]
+
+    max_pct_chg = _to_float(params.get("entry_max_pct_chg"), 100.0)
+    if max_pct_chg < 100:
+        data = data[data["pct_chg"].fillna(0) <= max_pct_chg]
+    return data, meta
+
+
+def _build_buy_reason_codes(
+    *,
+    row: dict[str, Any],
+    params: dict[str, Any],
+    is_rotate_buy: bool,
+    buy_filter_meta: dict[str, Any],
+) -> list[str]:
+    reason_codes: list[str] = ["score_rank"]
+
+    def _push(code: str) -> None:
+        if code and code not in reason_codes:
+            reason_codes.append(code)
+
+    if is_rotate_buy:
+        _push("rotate_in")
+
+    if _to_bool(params.get("entry_require_trend_alignment"), False):
+        close = _to_float(row.get("close"), 0.0)
+        ma20 = _to_float(row.get("ma20"), 0.0)
+        ma60 = _to_float(row.get("ma60"), 0.0)
+        if close > ma20 > ma60:
+            _push("trend_alignment_pass")
+
+    if _to_bool(params.get("entry_require_macd_positive"), False) and _to_float(row.get("macd_hist"), 0.0) > 0:
+        _push("macd_positive")
+
+    min_sector_strength = max(_to_float(params.get("entry_min_sector_strength"), 0.0), 0.0)
+    sector_strength = _to_float(row.get("sector_strength"), 0.0)
+    if min_sector_strength > 0 and sector_strength >= min_sector_strength:
+        _push("sector_strength_min_pass")
+
+    sector_quantile = _normalize_quantile(params.get("entry_sector_strength_quantile"))
+    threshold = buy_filter_meta.get("sector_strength_quantile_threshold")
+    if sector_quantile > 0 and threshold is not None and sector_strength >= _to_float(threshold, 0.0):
+        _push("sector_strength_quantile_pass")
+
+    rsi_min = _to_float(params.get("entry_rsi_min"), 0.0)
+    rsi_max = _to_float(params.get("entry_rsi_max"), 100.0)
+    low, high = min(rsi_min, rsi_max), max(rsi_min, rsi_max)
+    if low > 0.0 or high < 100.0:
+        rsi12 = _to_float(row.get("rsi12"), 50.0)
+        if low <= rsi12 <= high:
+            _push("rsi_range_pass")
+
+    max_pct_chg = _to_float(params.get("entry_max_pct_chg"), 100.0)
+    if max_pct_chg < 100 and _to_float(row.get("pct_chg"), 0.0) <= max_pct_chg:
+        _push("pct_chg_cap_pass")
+    return reason_codes
+
+
 def _apply_min_gross_exposure(
     *,
     buy_orders: list[dict[str, Any]],
@@ -337,11 +482,18 @@ class BacktestEngine:
         max_daily_trade_count = _normalize_limit(params.get("max_daily_trade_count"), 99)
         max_daily_rotate_count = _normalize_limit(params.get("max_daily_rotate_count"), 99)
         reentry_cooldown_days = max(_to_int(params.get("reentry_cooldown_days"), 0), 0)
+        market_exposure_floor = max(min(_to_float(params.get("market_exposure_floor"), 0.4), 1.0), 0.0)
+        allow_buy_in_risk_off = _to_bool(params.get("allow_buy_in_risk_off"), True)
+        annual_trade_window_days = max(_to_int(params.get("annual_trade_window_days"), 252), 1)
+        max_annual_trade_count = _normalize_limit(params.get("max_annual_trade_count"), 0)
+        max_annual_buy_count = _normalize_limit(params.get("max_annual_buy_count"), 0)
+        max_annual_sell_count = _normalize_limit(params.get("max_annual_sell_count"), 0)
         sell_signal_streak: dict[str, int] = {}
         last_exit_trade_index: dict[str, int] = {}
+        trade_events: deque[tuple[int, str]] = deque()
         market_pct_history: list[float] = []
         logger.info(
-            "run config: score_direction=%s, allowed_boards=%s, min_gross_exposure=%.2f, member_sector_mapping=%s, buy_limit=%s, sell_limit=%s, trade_limit=%s, rotate_limit=%s, reentry_cooldown=%s",
+            "run config: score_direction=%s, allowed_boards=%s, min_gross_exposure=%.2f, member_sector_mapping=%s, buy_limit=%s, sell_limit=%s, trade_limit=%s, rotate_limit=%s, reentry_cooldown=%s, exposure_floor=%.2f, buy_in_risk_off=%s, annual_window=%s, annual_trade_cap=%s",
             score_direction,
             ",".join(sorted(allowed_boards)),
             min_gross_exposure,
@@ -351,6 +503,10 @@ class BacktestEngine:
             max_daily_trade_count,
             max_daily_rotate_count,
             reentry_cooldown_days,
+            market_exposure_floor,
+            allow_buy_in_risk_off,
+            annual_trade_window_days,
+            max_annual_trade_count,
         )
 
         nav_rows: list[dict[str, Any]] = []
@@ -358,6 +514,25 @@ class BacktestEngine:
 
         for idx, trade_date in enumerate(open_dates[:-1], start=1):
             next_trade_date = open_dates[idx]
+            execution_trade_index = trade_index_map.get(next_trade_date, idx)
+            window_start_index = execution_trade_index - annual_trade_window_days + 1
+            while trade_events and trade_events[0][0] < window_start_index:
+                trade_events.popleft()
+
+            annual_trade_budget = -1
+            annual_buy_budget = -1
+            annual_sell_budget = -1
+            if max_annual_trade_count > 0 or max_annual_buy_count > 0 or max_annual_sell_count > 0:
+                rolling_trade_count = len(trade_events)
+                rolling_buy_count = sum(1 for _, side in trade_events if side == "BUY")
+                rolling_sell_count = rolling_trade_count - rolling_buy_count
+                if max_annual_trade_count > 0:
+                    annual_trade_budget = max(max_annual_trade_count - rolling_trade_count, 0)
+                if max_annual_buy_count > 0:
+                    annual_buy_budget = max(max_annual_buy_count - rolling_buy_count, 0)
+                if max_annual_sell_count > 0:
+                    annual_sell_budget = max(max_annual_sell_count - rolling_sell_count, 0)
+
             bundle = load_daily_data_bundle(
                 trade_date=trade_date,
                 next_trade_date=next_trade_date,
@@ -377,8 +552,8 @@ class BacktestEngine:
                 market_pct_history = market_pct_history[-40:]
             exposure_map = dict(params.get("market_exposure") or {})
             market_exposure = _to_float(exposure_map.get(market_regime), exposure)
-            if market_exposure < 0.4:
-                market_exposure = 0.4
+            if market_exposure < market_exposure_floor:
+                market_exposure = market_exposure_floor
 
             frame = bundle.frame_t.copy()
             frame["board"] = frame["ts_code"].map(_infer_board)
@@ -554,44 +729,34 @@ class BacktestEngine:
                     }
                 )
 
-            if max_daily_sell_count > 0 and len(sell_orders) > max_daily_sell_count:
-                sorted_sell_orders = sorted(sell_orders, key=_sell_order_priority)
-                keep_sell_orders = sorted_sell_orders[:max_daily_sell_count]
-                keep_codes = {str(item.get("ts_code") or "") for item in keep_sell_orders}
-                drop_codes = {
-                    str(item.get("ts_code") or "")
-                    for item in sell_orders
-                    if str(item.get("ts_code") or "") not in keep_codes
-                }
-                for ts_code in drop_codes:
-                    row = signal_rows.get(ts_code)
-                    if not row:
-                        continue
-                    reason_codes = list(row.get("reason_codes") or [])
-                    if "sell_throttled" not in reason_codes:
-                        reason_codes.append("sell_throttled")
-                    row["signal"] = "HOLD"
-                    row["reason_codes"] = reason_codes
-                sell_orders = keep_sell_orders
-            if max_daily_trade_count > 0 and len(sell_orders) > max_daily_trade_count:
-                sorted_sell_orders = sorted(sell_orders, key=_sell_order_priority)
-                keep_sell_orders = sorted_sell_orders[:max_daily_trade_count]
-                keep_codes = {str(item.get("ts_code") or "") for item in keep_sell_orders}
-                drop_codes = {
-                    str(item.get("ts_code") or "")
-                    for item in sell_orders
-                    if str(item.get("ts_code") or "") not in keep_codes
-                }
-                for ts_code in drop_codes:
-                    row = signal_rows.get(ts_code)
-                    if not row:
-                        continue
-                    reason_codes = list(row.get("reason_codes") or [])
-                    if "trade_throttled" not in reason_codes:
-                        reason_codes.append("trade_throttled")
-                    row["signal"] = "HOLD"
-                    row["reason_codes"] = reason_codes
-                sell_orders = keep_sell_orders
+            if max_daily_sell_count > 0:
+                sell_orders = _throttle_sell_orders(
+                    sell_orders=sell_orders,
+                    signal_rows=signal_rows,
+                    limit=max_daily_sell_count,
+                    reason_code="sell_throttled",
+                )
+            if max_daily_trade_count > 0:
+                sell_orders = _throttle_sell_orders(
+                    sell_orders=sell_orders,
+                    signal_rows=signal_rows,
+                    limit=max_daily_trade_count,
+                    reason_code="trade_throttled",
+                )
+            if annual_sell_budget >= 0:
+                sell_orders = _throttle_sell_orders(
+                    sell_orders=sell_orders,
+                    signal_rows=signal_rows,
+                    limit=annual_sell_budget,
+                    reason_code="annual_sell_cap",
+                )
+            if annual_trade_budget >= 0:
+                sell_orders = _throttle_sell_orders(
+                    sell_orders=sell_orders,
+                    signal_rows=signal_rows,
+                    limit=annual_trade_budget,
+                    reason_code="annual_trade_cap",
+                )
 
             buy_threshold = _to_float(params.get("buy_threshold"), 75.0)
             candidates = scored[(scored["score"] >= buy_threshold) & (~scored["ts_code"].isin(list(portfolio.positions.keys())))]
@@ -614,6 +779,7 @@ class BacktestEngine:
                         | (candidates["close"].fillna(0) <= candidates["boll_upper"].fillna(0) * 1.04)
                     )
                 ]
+            candidates, buy_filter_meta = _apply_buy_quality_filters(candidates, params)
             candidates = candidates.sort_values(by=["score", "sector_strength", "ts_code"], ascending=[False, False, True])
 
             buy_orders: list[dict[str, Any]] = []
@@ -632,6 +798,21 @@ class BacktestEngine:
                     available_slots = 0
             else:
                 available_trade_budget = -1
+            if annual_trade_budget >= 0:
+                annual_trade_budget_after_sells = max(annual_trade_budget - len(sell_orders), 0)
+                if available_trade_budget >= 0:
+                    available_trade_budget = min(available_trade_budget, annual_trade_budget_after_sells)
+                else:
+                    available_trade_budget = annual_trade_budget_after_sells
+                if available_trade_budget <= 0:
+                    available_slots = 0
+
+            buy_count_limit = max_daily_buy_count if max_daily_buy_count > 0 else -1
+            if annual_buy_budget >= 0:
+                if buy_count_limit >= 0:
+                    buy_count_limit = min(buy_count_limit, annual_buy_budget)
+                else:
+                    buy_count_limit = annual_buy_budget
 
             # Rotation when full and no explicit sell signal.
             if (
@@ -687,11 +868,12 @@ class BacktestEngine:
                     if available_trade_budget >= 0:
                         available_trade_budget = max(available_trade_budget - 1, 0)
 
-            if market_exposure >= 0.4 and available_slots > 0 and not candidates.empty:
+            allow_new_buy = market_exposure > 0 and (allow_buy_in_risk_off or market_regime != "risk_off")
+            if allow_new_buy and available_slots > 0 and not candidates.empty:
                 for row in candidates.to_dict(orient="records"):
                     if available_slots <= 0:
                         break
-                    if max_daily_buy_count > 0 and len(buy_orders) >= max_daily_buy_count:
+                    if buy_count_limit >= 0 and len(buy_orders) >= buy_count_limit:
                         break
                     if available_trade_budget >= 0 and available_trade_budget <= 0:
                         break
@@ -715,6 +897,12 @@ class BacktestEngine:
                     target_amount = calc_target_amount(total_equity=total_equity_t, target_weight=target_weight)
                     is_rotate_buy = rotate_group_id and ts_code == rotate_target_code
                     signal_type = "BUY_ROTATE" if is_rotate_buy else "BUY"
+                    buy_reason_codes = _build_buy_reason_codes(
+                        row=row,
+                        params=params,
+                        is_rotate_buy=bool(is_rotate_buy),
+                        buy_filter_meta=buy_filter_meta,
+                    )
                     buy_orders.append(
                         {
                             "side": "BUY",
@@ -724,7 +912,7 @@ class BacktestEngine:
                             "raw_score": _to_float(row.get("raw_score")),
                             "target_weight": target_weight,
                             "target_amount": target_amount,
-                            "reason_codes": ["score_rank"],
+                            "reason_codes": buy_reason_codes,
                             "rotate_group": rotate_group_id if is_rotate_buy else "",
                         }
                     )
@@ -738,7 +926,7 @@ class BacktestEngine:
                             "raw_score": _to_float(row.get("raw_score")),
                             "target_weight": target_weight,
                             "target_amount": target_amount,
-                            "reason_codes": ["score_rank"],
+                            "reason_codes": buy_reason_codes,
                             "market_regime": market_regime,
                         }
                     )
@@ -775,15 +963,18 @@ class BacktestEngine:
                 orders=orders,
                 next_daily_df=next_daily,
                 next_limit_df=next_limit,
-                trade_index=trade_index_map.get(next_trade_date, idx),
+                trade_index=execution_trade_index,
             )
             if trades:
                 upsert_backtest_trades(trades)
                 all_trades.extend(trades)
                 for trade in trades:
+                    side = str(trade.get("side") or "").upper()
+                    if side in {"BUY", "SELL"}:
+                        trade_events.append((execution_trade_index, side))
                     if str(trade.get("side")) == "SELL":
                         trade_ts_code = str(trade.get("ts_code") or "")
-                        trade_index_value = _to_int(trade.get("trade_index"), trade_index_map.get(next_trade_date, idx))
+                        trade_index_value = _to_int(trade.get("trade_index"), execution_trade_index)
                         if trade_ts_code:
                             last_exit_trade_index[trade_ts_code] = trade_index_value
                         sell_signal_streak.pop(str(trade.get("ts_code") or ""), None)

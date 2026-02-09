@@ -104,12 +104,14 @@ def get_backtest_trades(
     page: int = 1,
     page_size: int = 20,
     ts_code: str | None = None,
+    trade_date: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     return list_backtest_trades(
         run_id=run_id,
         page=page,
         page_size=page_size,
         ts_code=ts_code,
+        trade_date=trade_date,
     )
 
 

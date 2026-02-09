@@ -69,6 +69,15 @@ const NAV = [
     ),
   },
   {
+    href: "/daily-signals-legacy",
+    label: "Daily Signals(旧)",
+    icon: (
+      <Ico>
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </Ico>
+    ),
+  },
+  {
     href: "/market-index",
     label: "大盘指数",
     icon: (
