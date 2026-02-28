@@ -8,16 +8,20 @@ import time
 from app.core.config import settings
 
 
-def get_connection(*, read_only: bool = False, retries: int = 3, delay: float = 0.2) -> duckdb.DuckDBPyConnection:
-    """Open DuckDB connection with optional read-only mode and simple retry to dodge lock contention."""
+def get_connection(*, read_only: bool = False, retries: int = 20, delay: float = 0.5) -> duckdb.DuckDBPyConnection:
+    """Open DuckDB connection with retry to mitigate writer lock contention."""
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     for attempt in range(retries):
         try:
             return duckdb.connect(str(settings.duckdb_path), read_only=read_only)
         except duckdb.IOException as exc:
             # Handle file lock contention from concurrent writer (e.g., scheduler)
-            if "Could not set lock on file" in str(exc) and attempt < retries - 1:
-                time.sleep(delay * (attempt + 1))
+            text = str(exc)
+            lock_conflict = "Could not set lock on file" in text or "Conflicting lock is held" in text
+            if lock_conflict and attempt < retries - 1:
+                # Exponential backoff with an upper bound to avoid hot-loop lock storm
+                wait_seconds = min(delay * (2 ** attempt), 10.0)
+                time.sleep(wait_seconds)
                 continue
             raise
 

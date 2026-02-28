@@ -151,7 +151,7 @@ print(dt.datetime.strptime(text, "%Y%m%d").isoweekday())
 PY
 )"
 if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
-  run_step_task "4" "同步申万行业成分(每周五)" "python backend/scripts/daily/sync_shenwan_members.py --incremental"
+  run_step_task "4" "同步申万行业成分(每周五)" "python backend/scripts/daily/sync_shenwan_members.py --incremental --sync-date ${END_DATE}"
 else
   skip_step "4" "同步申万行业成分(每周五)" "非周五"
 fi
@@ -164,7 +164,7 @@ run_step_task "6" "同步指数数据(中信/大盘/申万因子)" "python backe
 
 # 7) Compact fragmented parquet files (weekly to reduce daily runtime)
 if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
-  run_step_task "7" "压缩Parquet文件(每周五)" "python backend/scripts/daily/compact_parquet.py --dataset all"
+  run_step_task "7" "压缩Parquet文件(每周五)" "python backend/scripts/daily/compact_parquet.py --dataset all --sync-date ${END_DATE}"
 else
   skip_step "7" "压缩Parquet文件(每周五)" "非周五"
 fi

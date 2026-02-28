@@ -2930,3 +2930,144 @@ td:first-child {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* ================================================================
+   DATA SYNC PAGE
+   ================================================================ */
+.sync-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.sync-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.sync-badge--ok {
+  background: rgba(34, 197, 94, 0.18);
+  color: #166534;
+}
+
+.sync-badge--partial {
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
+}
+
+.sync-badge--missing {
+  background: rgba(239, 68, 68, 0.16);
+  color: #991b1b;
+}
+
+.sync-badge--nontrading {
+  background: rgba(107, 114, 128, 0.2);
+  color: #374151;
+}
+
+.sync-months {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.sync-month-panel h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.sync-calendar-grid {
+  margin-top: 0;
+}
+
+.sync-day {
+  font-size: 12px;
+}
+
+.sync-status {
+  border: 1px solid var(--border);
+}
+
+.sync-status--ok {
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.sync-status--partial {
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.sync-status--missing {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.sync-status--nontrading {
+  background: rgba(107, 114, 128, 0.18);
+}
+
+.sync-missing-months {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.sync-missing-month h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.sync-missing-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sync-missing-item {
+  font-size: 11px;
+}
+
+.sync-job-meta {
+  margin: 10px 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sync-log-box {
+  margin: 0;
+  min-height: 220px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.4;
+  font-family: "JetBrains Mono", "Monaco", "Menlo", monospace;
+  white-space: pre-wrap;
+}
+
+.sync-job-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.sync-job-btn {
+  min-width: 132px;
+  justify-content: center;
+}
+
+.sync-job-btn--stop {
+  background: #475569;
+}
+
+.sync-job-btn--stop:hover:not(:disabled) {
+  background: #334155;
+}

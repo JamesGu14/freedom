@@ -21,7 +21,7 @@ services:
     expose:
       - "9000"
     environment:
-      TUSHARE_TOKEN: e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       DATA_DIR: /data
       DUCKDB_PATH: /data/quant.duckdb
       REDIS_URL: redis://redis:6379/0
@@ -38,7 +38,7 @@ services:
       context: ./backend
     command: ["python", "/app/scripts/scheduler.py"]
     environment:
-      TUSHARE_TOKEN: e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       DATA_DIR: /data
       DUCKDB_PATH: /data/quant.duckdb
       REDIS_URL: redis://redis:6379/0

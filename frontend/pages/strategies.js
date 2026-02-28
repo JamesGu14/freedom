@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { apiFetch } from "../lib/api";
 
-const PARAMS_DEFAULT = {
+const MULTIFACTOR_PARAMS_DEFAULT = {
   strategy_key: "multifactor_v1",
   score_direction: "normal",
   buy_threshold: 75,
@@ -54,6 +54,40 @@ const PARAMS_DEFAULT = {
   max_annual_sell_count: 0,
 };
 
+const MUSECAT_PARAMS_DEFAULT = {
+  ...MULTIFACTOR_PARAMS_DEFAULT,
+  strategy_key: "musecat_v1",
+  buy_threshold: 72,
+  sell_threshold: 48,
+  stop_loss_pct: 0.075,
+  trail_stop_pct: 0.095,
+  musecat_factor_weights: {
+    momentum: 0.35,
+    reversal: 0.2,
+    quality: 0.25,
+    liquidity: 0.2,
+  },
+  musecat_breakout_bonus: 5,
+  musecat_drawdown_penalty: 6,
+  musecat_macd_zero_axis_cross_bonus: 8,
+  musecat_macd_zero_axis_depth_scale: 3,
+  entry_require_macd_zero_axis_cross: false,
+};
+
+const STRATEGY_KEY_OPTIONS = [
+  { value: "multifactor_v1", label: "Alpha (multifactor_v1)" },
+  { value: "musecat_v1", label: "MuseCat (musecat_v1)" },
+];
+
+const resolveStrategyKey = (value) => {
+  const text = String(value || "").trim();
+  if (text === "musecat_v1") return "musecat_v1";
+  return "multifactor_v1";
+};
+
+const getParamsDefaultByKey = (strategyKey) =>
+  resolveStrategyKey(strategyKey) === "musecat_v1" ? MUSECAT_PARAMS_DEFAULT : MULTIFACTOR_PARAMS_DEFAULT;
+
 const BOARD_OPTIONS = [
   { value: "sh_main", label: "沪市主板" },
   { value: "sz_main", label: "深市主板" },
@@ -103,28 +137,37 @@ const normalizeScoreDirection = (value) => {
   return "normal";
 };
 
-const mergeParamsSnapshot = (snapshot) => {
+const mergeParamsSnapshot = (snapshot, strategyKey) => {
+  const defaults = getParamsDefaultByKey(strategyKey);
   const source = snapshot && typeof snapshot === "object" ? snapshot : {};
   const marketExposure = {
-    ...PARAMS_DEFAULT.market_exposure,
+    ...defaults.market_exposure,
     ...(source.market_exposure && typeof source.market_exposure === "object"
       ? source.market_exposure
       : {}),
   };
   const sectorSourceWeights = {
-    ...PARAMS_DEFAULT.sector_source_weights,
+    ...defaults.sector_source_weights,
     ...(source.sector_source_weights && typeof source.sector_source_weights === "object"
       ? source.sector_source_weights
       : {}),
   };
   const factorWeights = {
-    ...PARAMS_DEFAULT.factor_weights,
+    ...MULTIFACTOR_PARAMS_DEFAULT.factor_weights,
     ...(source.factor_weights && typeof source.factor_weights === "object"
       ? source.factor_weights
       : {}),
   };
+  const musecatFactorWeights = {
+    ...(defaults.musecat_factor_weights && typeof defaults.musecat_factor_weights === "object"
+      ? defaults.musecat_factor_weights
+      : MUSECAT_PARAMS_DEFAULT.musecat_factor_weights),
+    ...(source.musecat_factor_weights && typeof source.musecat_factor_weights === "object"
+      ? source.musecat_factor_weights
+      : {}),
+  };
 
-  let allowedBoards = PARAMS_DEFAULT.allowed_boards;
+  let allowedBoards = defaults.allowed_boards;
   if (Array.isArray(source.allowed_boards)) {
     const normalized = source.allowed_boards
       .map((item) => String(item || "").trim().toLowerCase())
@@ -133,22 +176,27 @@ const mergeParamsSnapshot = (snapshot) => {
   }
 
   return {
-    ...PARAMS_DEFAULT,
+    ...defaults,
     ...source,
-    strategy_key: String(source.strategy_key || PARAMS_DEFAULT.strategy_key),
-    score_direction: normalizeScoreDirection(source.score_direction || PARAMS_DEFAULT.score_direction),
+    strategy_key: resolveStrategyKey(strategyKey || source.strategy_key || defaults.strategy_key),
+    score_direction: normalizeScoreDirection(source.score_direction || defaults.score_direction),
     market_exposure: marketExposure,
     sector_source_weights: sectorSourceWeights,
     factor_weights: factorWeights,
+    musecat_factor_weights: musecatFactorWeights,
     allowed_boards: Array.from(new Set(allowedBoards)),
   };
 };
 
-const buildParamsForm = (snapshot) => {
-  const merged = mergeParamsSnapshot(snapshot);
+const buildParamsForm = (snapshot, strategyKey) => {
+  const merged = mergeParamsSnapshot(snapshot, strategyKey);
   const allowedSet = new Set(merged.allowed_boards);
+  const musecatFactorWeights =
+    merged.musecat_factor_weights && typeof merged.musecat_factor_weights === "object"
+      ? merged.musecat_factor_weights
+      : MUSECAT_PARAMS_DEFAULT.musecat_factor_weights;
   return {
-    strategy_key: String(merged.strategy_key || PARAMS_DEFAULT.strategy_key),
+    strategy_key: resolveStrategyKey(merged.strategy_key || strategyKey),
     score_direction: normalizeScoreDirection(merged.score_direction),
     buy_threshold: toInputValue(merged.buy_threshold),
     sell_threshold: toInputValue(merged.sell_threshold),
@@ -173,15 +221,24 @@ const buildParamsForm = (snapshot) => {
     allow_buy_in_risk_off: Boolean(merged.allow_buy_in_risk_off),
     entry_require_trend_alignment: Boolean(merged.entry_require_trend_alignment),
     entry_require_macd_positive: Boolean(merged.entry_require_macd_positive),
+    entry_require_macd_zero_axis_cross: Boolean(merged.entry_require_macd_zero_axis_cross),
     entry_min_sector_strength: toInputValue(merged.entry_min_sector_strength),
     entry_sector_strength_quantile: toInputValue(merged.entry_sector_strength_quantile),
     entry_rsi_min: toInputValue(merged.entry_rsi_min),
     entry_rsi_max: toInputValue(merged.entry_rsi_max),
     entry_max_pct_chg: toInputValue(merged.entry_max_pct_chg),
-    factor_weights_stock_trend: toInputValue(merged.factor_weights.stock_trend),
-    factor_weights_sector_strength: toInputValue(merged.factor_weights.sector_strength),
-    factor_weights_value_quality: toInputValue(merged.factor_weights.value_quality),
-    factor_weights_liquidity_stability: toInputValue(merged.factor_weights.liquidity_stability),
+    factor_weights_stock_trend: toInputValue((merged.factor_weights || {}).stock_trend),
+    factor_weights_sector_strength: toInputValue((merged.factor_weights || {}).sector_strength),
+    factor_weights_value_quality: toInputValue((merged.factor_weights || {}).value_quality),
+    factor_weights_liquidity_stability: toInputValue((merged.factor_weights || {}).liquidity_stability),
+    musecat_factor_weights_momentum: toInputValue(musecatFactorWeights.momentum),
+    musecat_factor_weights_reversal: toInputValue(musecatFactorWeights.reversal),
+    musecat_factor_weights_quality: toInputValue(musecatFactorWeights.quality),
+    musecat_factor_weights_liquidity: toInputValue(musecatFactorWeights.liquidity),
+    musecat_breakout_bonus: toInputValue(merged.musecat_breakout_bonus),
+    musecat_drawdown_penalty: toInputValue(merged.musecat_drawdown_penalty),
+    musecat_macd_zero_axis_cross_bonus: toInputValue(merged.musecat_macd_zero_axis_cross_bonus),
+    musecat_macd_zero_axis_depth_scale: toInputValue(merged.musecat_macd_zero_axis_depth_scale),
     enable_buy_tech_filter: Boolean(merged.enable_buy_tech_filter),
     signal_store_topk: toInputValue(merged.signal_store_topk),
     use_member_sector_mapping: Boolean(merged.use_member_sector_mapping),
@@ -205,76 +262,93 @@ const buildParamsForm = (snapshot) => {
   };
 };
 
-const buildParamsSnapshot = (form) => {
+const buildParamsSnapshot = (form, strategyKey) => {
+  const key = resolveStrategyKey(strategyKey || form.strategy_key);
+  const defaults = getParamsDefaultByKey(key);
   const allowedBoards = BOARD_OPTIONS.filter((item) => Boolean(form[`allowed_boards_${item.value}`])).map(
     (item) => item.value
   );
-  return {
-    strategy_key: String(form.strategy_key || "").trim() || PARAMS_DEFAULT.strategy_key,
+  const payload = {
+    strategy_key: key,
     score_direction: normalizeScoreDirection(form.score_direction),
-    buy_threshold: toFloat(form.buy_threshold, PARAMS_DEFAULT.buy_threshold),
-    sell_threshold: toFloat(form.sell_threshold, PARAMS_DEFAULT.sell_threshold),
-    max_positions: toInt(form.max_positions, PARAMS_DEFAULT.max_positions),
-    slot_weight: toFloat(form.slot_weight, PARAMS_DEFAULT.slot_weight),
-    sector_max: toFloat(form.sector_max, PARAMS_DEFAULT.sector_max),
-    min_avg_amount_20d: toFloat(form.min_avg_amount_20d, PARAMS_DEFAULT.min_avg_amount_20d),
+    buy_threshold: toFloat(form.buy_threshold, defaults.buy_threshold),
+    sell_threshold: toFloat(form.sell_threshold, defaults.sell_threshold),
+    max_positions: toInt(form.max_positions, defaults.max_positions),
+    slot_weight: toFloat(form.slot_weight, defaults.slot_weight),
+    sector_max: toFloat(form.sector_max, defaults.sector_max),
+    min_avg_amount_20d: toFloat(form.min_avg_amount_20d, defaults.min_avg_amount_20d),
     market_exposure: {
-      risk_on: toFloat(form.market_exposure_risk_on, PARAMS_DEFAULT.market_exposure.risk_on),
-      neutral: toFloat(form.market_exposure_neutral, PARAMS_DEFAULT.market_exposure.neutral),
-      risk_off: toFloat(form.market_exposure_risk_off, PARAMS_DEFAULT.market_exposure.risk_off),
+      risk_on: toFloat(form.market_exposure_risk_on, defaults.market_exposure.risk_on),
+      neutral: toFloat(form.market_exposure_neutral, defaults.market_exposure.neutral),
+      risk_off: toFloat(form.market_exposure_risk_off, defaults.market_exposure.risk_off),
     },
-    stop_loss_pct: toFloat(form.stop_loss_pct, PARAMS_DEFAULT.stop_loss_pct),
-    trail_stop_pct: toFloat(form.trail_stop_pct, PARAMS_DEFAULT.trail_stop_pct),
-    max_hold_days: toInt(form.max_hold_days, PARAMS_DEFAULT.max_hold_days),
-    sell_confirm_days: toInt(form.sell_confirm_days, PARAMS_DEFAULT.sell_confirm_days),
-    rotate_score_delta: toFloat(form.rotate_score_delta, PARAMS_DEFAULT.rotate_score_delta),
-    rotate_profit_ceiling: toFloat(form.rotate_profit_ceiling, PARAMS_DEFAULT.rotate_profit_ceiling),
-    min_hold_days_before_rotate: toInt(form.min_hold_days_before_rotate, PARAMS_DEFAULT.min_hold_days_before_rotate),
-    score_ceiling: toFloat(form.score_ceiling, PARAMS_DEFAULT.score_ceiling),
-    slot_min_scale: toFloat(form.slot_min_scale, PARAMS_DEFAULT.slot_min_scale),
-    min_gross_exposure: toFloat(form.min_gross_exposure, PARAMS_DEFAULT.min_gross_exposure),
-    market_exposure_floor: toFloat(form.market_exposure_floor, PARAMS_DEFAULT.market_exposure_floor),
+    stop_loss_pct: toFloat(form.stop_loss_pct, defaults.stop_loss_pct),
+    trail_stop_pct: toFloat(form.trail_stop_pct, defaults.trail_stop_pct),
+    max_hold_days: toInt(form.max_hold_days, defaults.max_hold_days),
+    sell_confirm_days: toInt(form.sell_confirm_days, defaults.sell_confirm_days),
+    rotate_score_delta: toFloat(form.rotate_score_delta, defaults.rotate_score_delta),
+    rotate_profit_ceiling: toFloat(form.rotate_profit_ceiling, defaults.rotate_profit_ceiling),
+    min_hold_days_before_rotate: toInt(form.min_hold_days_before_rotate, defaults.min_hold_days_before_rotate),
+    score_ceiling: toFloat(form.score_ceiling, defaults.score_ceiling),
+    slot_min_scale: toFloat(form.slot_min_scale, defaults.slot_min_scale),
+    min_gross_exposure: toFloat(form.min_gross_exposure, defaults.min_gross_exposure),
+    market_exposure_floor: toFloat(form.market_exposure_floor, defaults.market_exposure_floor),
     allow_buy_in_risk_off: Boolean(form.allow_buy_in_risk_off),
-    allowed_boards: allowedBoards.length > 0 ? allowedBoards : PARAMS_DEFAULT.allowed_boards,
+    allowed_boards: allowedBoards.length > 0 ? allowedBoards : defaults.allowed_boards,
     enable_buy_tech_filter: Boolean(form.enable_buy_tech_filter),
     entry_require_trend_alignment: Boolean(form.entry_require_trend_alignment),
     entry_require_macd_positive: Boolean(form.entry_require_macd_positive),
-    entry_min_sector_strength: toFloat(form.entry_min_sector_strength, PARAMS_DEFAULT.entry_min_sector_strength),
+    entry_require_macd_zero_axis_cross: Boolean(form.entry_require_macd_zero_axis_cross),
+    entry_min_sector_strength: toFloat(form.entry_min_sector_strength, defaults.entry_min_sector_strength),
     entry_sector_strength_quantile: toFloat(
       form.entry_sector_strength_quantile,
-      PARAMS_DEFAULT.entry_sector_strength_quantile
+      defaults.entry_sector_strength_quantile
     ),
-    entry_rsi_min: toFloat(form.entry_rsi_min, PARAMS_DEFAULT.entry_rsi_min),
-    entry_rsi_max: toFloat(form.entry_rsi_max, PARAMS_DEFAULT.entry_rsi_max),
-    entry_max_pct_chg: toFloat(form.entry_max_pct_chg, PARAMS_DEFAULT.entry_max_pct_chg),
-    factor_weights: {
-      stock_trend: toFloat(form.factor_weights_stock_trend, PARAMS_DEFAULT.factor_weights.stock_trend),
-      sector_strength: toFloat(
-        form.factor_weights_sector_strength,
-        PARAMS_DEFAULT.factor_weights.sector_strength
-      ),
-      value_quality: toFloat(form.factor_weights_value_quality, PARAMS_DEFAULT.factor_weights.value_quality),
-      liquidity_stability: toFloat(
-        form.factor_weights_liquidity_stability,
-        PARAMS_DEFAULT.factor_weights.liquidity_stability
-      ),
-    },
-    signal_store_topk: toInt(form.signal_store_topk, PARAMS_DEFAULT.signal_store_topk),
+    entry_rsi_min: toFloat(form.entry_rsi_min, defaults.entry_rsi_min),
+    entry_rsi_max: toFloat(form.entry_rsi_max, defaults.entry_rsi_max),
+    entry_max_pct_chg: toFloat(form.entry_max_pct_chg, defaults.entry_max_pct_chg),
+    signal_store_topk: toInt(form.signal_store_topk, defaults.signal_store_topk),
     use_member_sector_mapping: Boolean(form.use_member_sector_mapping),
     sector_source_weights: {
-      sw: toFloat(form.sector_source_weights_sw, PARAMS_DEFAULT.sector_source_weights.sw),
-      ci: toFloat(form.sector_source_weights_ci, PARAMS_DEFAULT.sector_source_weights.ci),
+      sw: toFloat(form.sector_source_weights_sw, defaults.sector_source_weights.sw),
+      ci: toFloat(form.sector_source_weights_ci, defaults.sector_source_weights.ci),
     },
-    max_daily_buy_count: toInt(form.max_daily_buy_count, PARAMS_DEFAULT.max_daily_buy_count),
-    max_daily_sell_count: toInt(form.max_daily_sell_count, PARAMS_DEFAULT.max_daily_sell_count),
-    max_daily_trade_count: toInt(form.max_daily_trade_count, PARAMS_DEFAULT.max_daily_trade_count),
-    max_daily_rotate_count: toInt(form.max_daily_rotate_count, PARAMS_DEFAULT.max_daily_rotate_count),
-    reentry_cooldown_days: toInt(form.reentry_cooldown_days, PARAMS_DEFAULT.reentry_cooldown_days),
-    annual_trade_window_days: toInt(form.annual_trade_window_days, PARAMS_DEFAULT.annual_trade_window_days),
-    max_annual_trade_count: toInt(form.max_annual_trade_count, PARAMS_DEFAULT.max_annual_trade_count),
-    max_annual_buy_count: toInt(form.max_annual_buy_count, PARAMS_DEFAULT.max_annual_buy_count),
-    max_annual_sell_count: toInt(form.max_annual_sell_count, PARAMS_DEFAULT.max_annual_sell_count),
+    max_daily_buy_count: toInt(form.max_daily_buy_count, defaults.max_daily_buy_count),
+    max_daily_sell_count: toInt(form.max_daily_sell_count, defaults.max_daily_sell_count),
+    max_daily_trade_count: toInt(form.max_daily_trade_count, defaults.max_daily_trade_count),
+    max_daily_rotate_count: toInt(form.max_daily_rotate_count, defaults.max_daily_rotate_count),
+    reentry_cooldown_days: toInt(form.reentry_cooldown_days, defaults.reentry_cooldown_days),
+    annual_trade_window_days: toInt(form.annual_trade_window_days, defaults.annual_trade_window_days),
+    max_annual_trade_count: toInt(form.max_annual_trade_count, defaults.max_annual_trade_count),
+    max_annual_buy_count: toInt(form.max_annual_buy_count, defaults.max_annual_buy_count),
+    max_annual_sell_count: toInt(form.max_annual_sell_count, defaults.max_annual_sell_count),
   };
+  if (key === "musecat_v1") {
+    payload.musecat_factor_weights = {
+      momentum: toFloat(form.musecat_factor_weights_momentum, defaults.musecat_factor_weights.momentum),
+      reversal: toFloat(form.musecat_factor_weights_reversal, defaults.musecat_factor_weights.reversal),
+      quality: toFloat(form.musecat_factor_weights_quality, defaults.musecat_factor_weights.quality),
+      liquidity: toFloat(form.musecat_factor_weights_liquidity, defaults.musecat_factor_weights.liquidity),
+    };
+    payload.musecat_breakout_bonus = toFloat(form.musecat_breakout_bonus, defaults.musecat_breakout_bonus);
+    payload.musecat_drawdown_penalty = toFloat(form.musecat_drawdown_penalty, defaults.musecat_drawdown_penalty);
+    payload.musecat_macd_zero_axis_cross_bonus = toFloat(
+      form.musecat_macd_zero_axis_cross_bonus,
+      defaults.musecat_macd_zero_axis_cross_bonus
+    );
+    payload.musecat_macd_zero_axis_depth_scale = toFloat(
+      form.musecat_macd_zero_axis_depth_scale,
+      defaults.musecat_macd_zero_axis_depth_scale
+    );
+  } else {
+    payload.factor_weights = {
+      stock_trend: toFloat(form.factor_weights_stock_trend, defaults.factor_weights.stock_trend),
+      sector_strength: toFloat(form.factor_weights_sector_strength, defaults.factor_weights.sector_strength),
+      value_quality: toFloat(form.factor_weights_value_quality, defaults.factor_weights.value_quality),
+      liquidity_stability: toFloat(form.factor_weights_liquidity_stability, defaults.factor_weights.liquidity_stability),
+    };
+  }
+  return payload;
 };
 
 const formatParamsSnapshotJson = (snapshot) => JSON.stringify(snapshot || {}, null, 2);
@@ -302,15 +376,16 @@ export default function StrategiesPage() {
   const [selectedRunIds, setSelectedRunIds] = useState([]);
 
   const [newName, setNewName] = useState("");
+  const [newStrategyKey, setNewStrategyKey] = useState("multifactor_v1");
   const [newDescription, setNewDescription] = useState("");
   const [newOwner, setNewOwner] = useState("");
 
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [versionCodeRef, setVersionCodeRef] = useState("main");
   const [versionChangeLog, setVersionChangeLog] = useState("");
-  const [paramsForm, setParamsForm] = useState(() => buildParamsForm(PARAMS_DEFAULT));
+  const [paramsForm, setParamsForm] = useState(() => buildParamsForm(MULTIFACTOR_PARAMS_DEFAULT, "multifactor_v1"));
   const [paramsJsonText, setParamsJsonText] = useState(() =>
-    formatParamsSnapshotJson(buildParamsSnapshot(buildParamsForm(PARAMS_DEFAULT)))
+    formatParamsSnapshotJson(buildParamsSnapshot(buildParamsForm(MULTIFACTOR_PARAMS_DEFAULT, "multifactor_v1"), "multifactor_v1"))
   );
   const [paramsJsonError, setParamsJsonError] = useState("");
   const [paramsSeedKey, setParamsSeedKey] = useState("");
@@ -328,11 +403,16 @@ export default function StrategiesPage() {
   const [versionsCollapsed, setVersionsCollapsed] = useState(false);
 
   const totalPages = useMemo(() => Math.max(Math.ceil(total / pageSize), 1), [total, pageSize]);
+  const selectedStrategy = useMemo(
+    () => items.find((item) => item.strategy_id === selectedStrategyId) || null,
+    [items, selectedStrategyId]
+  );
+  const currentStrategyKey = resolveStrategyKey(selectedStrategy?.strategy_key);
 
   const setParamValue = (key, value) => {
     setParamsForm((prev) => {
       const next = { ...prev, [key]: value };
-      setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(next)));
+      setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(next, currentStrategyKey)));
       return next;
     });
     setParamsJsonError("");
@@ -344,7 +424,7 @@ export default function StrategiesPage() {
     setParamsFormDirty(true);
     try {
       const parsed = parseParamsSnapshotJson(value);
-      setParamsForm(buildParamsForm(parsed));
+      setParamsForm(buildParamsForm(parsed, currentStrategyKey));
       setParamsJsonError("");
     } catch (err) {
       setParamsJsonError(err.message || "JSON 格式错误");
@@ -413,18 +493,18 @@ export default function StrategiesPage() {
   useEffect(() => {
     if (!selectedStrategyId) return;
     const latest = versions[0];
-    const nextSeedKey = `${selectedStrategyId}:${latest?.strategy_version_id || "default"}`;
+    const nextSeedKey = `${selectedStrategyId}:${latest?.strategy_version_id || "default"}:${currentStrategyKey}`;
     if (nextSeedKey !== paramsSeedKey || !paramsFormDirty) {
       if (nextSeedKey !== paramsSeedKey) {
-        const nextForm = buildParamsForm(latest?.params_snapshot || PARAMS_DEFAULT);
+        const nextForm = buildParamsForm(latest?.params_snapshot || getParamsDefaultByKey(currentStrategyKey), currentStrategyKey);
         setParamsForm(nextForm);
-        setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(nextForm)));
+        setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(nextForm, currentStrategyKey)));
         setParamsJsonError("");
         setParamsFormDirty(false);
         setParamsSeedKey(nextSeedKey);
       }
     }
-  }, [selectedStrategyId, versions, paramsSeedKey, paramsFormDirty]);
+  }, [selectedStrategyId, versions, paramsSeedKey, paramsFormDirty, currentStrategyKey]);
 
   const createStrategy = async (event) => {
     event.preventDefault();
@@ -435,6 +515,7 @@ export default function StrategiesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newName.trim(),
+          strategy_key: newStrategyKey,
           description: newDescription.trim(),
           owner: newOwner.trim(),
         }),
@@ -445,6 +526,7 @@ export default function StrategiesPage() {
       }
       const item = await res.json();
       setNewName("");
+      setNewStrategyKey("multifactor_v1");
       setNewDescription("");
       setNewOwner("");
       setStrategyModalOpen(false);
@@ -463,6 +545,7 @@ export default function StrategiesPage() {
     let paramsSnapshot = {};
     try {
       paramsSnapshot = parseParamsSnapshotJson(paramsJsonText);
+      paramsSnapshot.strategy_key = currentStrategyKey;
       setParamsJsonError("");
     } catch (err) {
       const message = err.message || "params_snapshot JSON 解析失败";
@@ -557,7 +640,7 @@ export default function StrategiesPage() {
   };
 
   const openVersionModal = () => {
-    setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(paramsForm)));
+    setParamsJsonText(formatParamsSnapshotJson(buildParamsSnapshot(paramsForm, currentStrategyKey)));
     setParamsJsonError("");
     setVersionModalOpen(true);
   };
@@ -649,6 +732,7 @@ export default function StrategiesPage() {
                   <tr>
                     <th>策略ID</th>
                     <th>名称</th>
+                    <th>策略键</th>
                     <th>状态</th>
                     <th>最近Run</th>
                     <th>累计收益</th>
@@ -658,7 +742,7 @@ export default function StrategiesPage() {
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="empty">
+                      <td colSpan={7} className="empty">
                         暂无策略
                       </td>
                     </tr>
@@ -672,6 +756,7 @@ export default function StrategiesPage() {
                       >
                         <td>{item.strategy_id}</td>
                         <td>{item.name}</td>
+                        <td>{item.strategy_key || "multifactor_v1"}</td>
                         <td>{item.status || "-"}</td>
                         <td>{item.latest_run_id || "-"}</td>
                         <td>{formatPct(item?.latest_summary?.total_return)}</td>
@@ -723,7 +808,7 @@ export default function StrategiesPage() {
               <h3 style={{ margin: 0 }}>版本列表</h3>
               <div className="panel-title-actions">
                 <span className="subtitle" style={{ margin: 0 }}>
-                  当前策略: {selectedStrategyId || "-"}
+                  当前策略: {selectedStrategyId || "-"} / {currentStrategyKey}
                 </span>
                 <button
                   type="button"
@@ -752,6 +837,7 @@ export default function StrategiesPage() {
                     <tr>
                       <th>版本</th>
                       <th>版本ID</th>
+                      <th>策略键</th>
                       <th>Code Ref</th>
                       <th>创建时间</th>
                     </tr>
@@ -759,7 +845,7 @@ export default function StrategiesPage() {
                   <tbody>
                     {versions.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="empty">
+                        <td colSpan={5} className="empty">
                           暂无版本
                         </td>
                       </tr>
@@ -773,6 +859,7 @@ export default function StrategiesPage() {
                         >
                           <td>{item.version || "-"}</td>
                           <td>{item.strategy_version_id}</td>
+                          <td>{item.strategy_key || selectedStrategy?.strategy_key || "-"}</td>
                           <td>{item.code_ref || "-"}</td>
                           <td>{formatDateTime(item.created_at)}</td>
                         </tr>
@@ -820,8 +907,8 @@ export default function StrategiesPage() {
                 <div className="version-params-grid">
                   <label className="field">
                     <span>strategy_key</span>
-                    <small className="field-hint">策略引擎标识，通常为 multifactor_v1</small>
-                    <input value={paramsForm.strategy_key} onChange={(e) => setParamValue("strategy_key", e.target.value)} />
+                    <small className="field-hint">由策略定义绑定，版本中不可修改</small>
+                    <input value={currentStrategyKey} readOnly />
                   </label>
                   <label className="field">
                     <span>score_direction</span>
@@ -1084,46 +1171,133 @@ export default function StrategiesPage() {
                       onChange={(e) => setParamValue("entry_max_pct_chg", e.target.value)}
                     />
                   </label>
-                  <label className="field">
-                    <span>factor_weights.stock_trend</span>
-                    <small className="field-hint">评分权重：个股趋势</small>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={paramsForm.factor_weights_stock_trend}
-                      onChange={(e) => setParamValue("factor_weights_stock_trend", e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>factor_weights.sector_strength</span>
-                    <small className="field-hint">评分权重：板块强度</small>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={paramsForm.factor_weights_sector_strength}
-                      onChange={(e) => setParamValue("factor_weights_sector_strength", e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>factor_weights.value_quality</span>
-                    <small className="field-hint">评分权重：估值质量</small>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={paramsForm.factor_weights_value_quality}
-                      onChange={(e) => setParamValue("factor_weights_value_quality", e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>factor_weights.liquidity_stability</span>
-                    <small className="field-hint">评分权重：流动性稳定</small>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={paramsForm.factor_weights_liquidity_stability}
-                      onChange={(e) => setParamValue("factor_weights_liquidity_stability", e.target.value)}
-                    />
-                  </label>
+                  {currentStrategyKey === "musecat_v1" ? (
+                    <>
+                      <label className="field">
+                        <span>musecat_factor_weights.momentum</span>
+                        <small className="field-hint">MuseCat 权重：动量</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.musecat_factor_weights_momentum}
+                          onChange={(e) => setParamValue("musecat_factor_weights_momentum", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>musecat_factor_weights.reversal</span>
+                        <small className="field-hint">MuseCat 权重：均值回归</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.musecat_factor_weights_reversal}
+                          onChange={(e) => setParamValue("musecat_factor_weights_reversal", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>musecat_factor_weights.quality</span>
+                        <small className="field-hint">MuseCat 权重：质量</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.musecat_factor_weights_quality}
+                          onChange={(e) => setParamValue("musecat_factor_weights_quality", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>musecat_factor_weights.liquidity</span>
+                        <small className="field-hint">MuseCat 权重：流动性</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.musecat_factor_weights_liquidity}
+                          onChange={(e) => setParamValue("musecat_factor_weights_liquidity", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>musecat_breakout_bonus</span>
+                        <small className="field-hint">MuseCat 突破加分</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.musecat_breakout_bonus}
+                          onChange={(e) => setParamValue("musecat_breakout_bonus", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>musecat_drawdown_penalty</span>
+                        <small className="field-hint">MuseCat 回撤惩罚分</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.musecat_drawdown_penalty}
+                          onChange={(e) => setParamValue("musecat_drawdown_penalty", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>musecat_macd_zero_axis_cross_bonus</span>
+                        <small className="field-hint">MuseCat 零轴下金叉加分上限</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.musecat_macd_zero_axis_cross_bonus}
+                          onChange={(e) => setParamValue("musecat_macd_zero_axis_cross_bonus", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>musecat_macd_zero_axis_depth_scale</span>
+                        <small className="field-hint">零轴下深度尺度：MACD 达到该负值给满分（如 3 表示 -3 给满加分，-1 约 1/3）</small>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={paramsForm.musecat_macd_zero_axis_depth_scale}
+                          onChange={(e) => setParamValue("musecat_macd_zero_axis_depth_scale", e.target.value)}
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <label className="field">
+                        <span>factor_weights.stock_trend</span>
+                        <small className="field-hint">评分权重：个股趋势</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.factor_weights_stock_trend}
+                          onChange={(e) => setParamValue("factor_weights_stock_trend", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>factor_weights.sector_strength</span>
+                        <small className="field-hint">评分权重：板块强度</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.factor_weights_sector_strength}
+                          onChange={(e) => setParamValue("factor_weights_sector_strength", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>factor_weights.value_quality</span>
+                        <small className="field-hint">评分权重：估值质量</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.factor_weights_value_quality}
+                          onChange={(e) => setParamValue("factor_weights_value_quality", e.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>factor_weights.liquidity_stability</span>
+                        <small className="field-hint">评分权重：流动性稳定</small>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={paramsForm.factor_weights_liquidity_stability}
+                          onChange={(e) => setParamValue("factor_weights_liquidity_stability", e.target.value)}
+                        />
+                      </label>
+                    </>
+                  )}
                   <label className="field">
                     <span>signal_store_topk</span>
                     <small className="field-hint">每日保存信号条数上限</small>
@@ -1291,6 +1465,17 @@ export default function StrategiesPage() {
                   <label className="field checkbox-field">
                     <input
                       type="checkbox"
+                      checked={paramsForm.entry_require_macd_zero_axis_cross}
+                      onChange={(e) => setParamValue("entry_require_macd_zero_axis_cross", e.target.checked)}
+                    />
+                    <div>
+                      <span>entry_require_macd_zero_axis_cross</span>
+                      <small className="field-hint">入场要求零轴下金叉（macd_hist&gt;0 且 DIF/DEA&lt;0）</small>
+                    </div>
+                  </label>
+                  <label className="field checkbox-field">
+                    <input
+                      type="checkbox"
                       checked={paramsForm.use_member_sector_mapping}
                       onChange={(e) => setParamValue("use_member_sector_mapping", e.target.checked)}
                     />
@@ -1317,11 +1502,6 @@ export default function StrategiesPage() {
                   </div>
                 </div>
 
-                <div className="form-actions version-submit-row" style={{ marginTop: 12 }}>
-                  <button className="primary" type="submit">
-                    发布版本
-                  </button>
-                </div>
                 </div>
 
                 <aside className="version-json-panel">
@@ -1336,6 +1516,11 @@ export default function StrategiesPage() {
                     spellCheck={false}
                   />
                   {paramsJsonError ? <div className="version-json-error">{paramsJsonError}</div> : null}
+                  <div className="form-actions version-submit-row" style={{ marginTop: 12 }}>
+                    <button className="primary" type="submit">
+                      发布版本
+                    </button>
+                  </div>
                 </aside>
                 </div>
                   </form>
@@ -1497,6 +1682,16 @@ export default function StrategiesPage() {
               <label className="field">
                 <span>名称</span>
                 <input value={newName} onChange={(e) => setNewName(e.target.value)} required />
+              </label>
+              <label className="field">
+                <span>策略键</span>
+                <select value={newStrategyKey} onChange={(e) => setNewStrategyKey(resolveStrategyKey(e.target.value))}>
+                  {STRATEGY_KEY_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="field">
                 <span>Owner</span>

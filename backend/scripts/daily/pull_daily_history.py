@@ -17,6 +17,7 @@ sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings
 from app.data.duckdb_store import upsert_adj_factor, upsert_daily, upsert_daily_basic, upsert_daily_limit
+from app.data.mongo_data_sync_date import mark_sync_done
 from app.data.mongo_trade_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,9 @@ def main() -> None:
     total_adj = 0
     total_basic = 0
     total_limit = 0
+    adj_failed_dates: list[str] = []
 
+    synced_dates: list[str] = []
     progress = tqdm(date_list, total=len(date_list), desc="pull_daily_history", unit="day", dynamic_ncols=True)
     for idx, trade_date in enumerate(progress, start=1):
         if not is_trading_day(trade_date, exchange="SSE"):
@@ -133,7 +136,19 @@ def main() -> None:
                 )
 
             write_adj_start = time.perf_counter()
-            inserted_adj = upsert_adj_factor(adj_df)
+            inserted_adj = 0
+            try:
+                inserted_adj = upsert_adj_factor(adj_df)
+            except Exception as adj_exc:
+                # DuckDB lock contention should not block daily/basic/limit writes.
+                adj_failed_dates.append(trade_date)
+                logger.warning(
+                    "[%s/%s] %s adj_factor upsert failed, continue other datasets: %s",
+                    idx,
+                    len(date_list),
+                    trade_date,
+                    adj_exc,
+                )
             write_adj_elapsed = time.perf_counter() - write_adj_start
 
             # daily_basic
@@ -156,6 +171,7 @@ def main() -> None:
             total_adj += inserted_adj
             total_basic += inserted_basic
             total_limit += inserted_limit
+            synced_dates.append(trade_date)
 
             total_api = api_elapsed + api_basic_elapsed + api_limit_elapsed
             total_write = write_daily_elapsed + write_adj_elapsed + write_basic_elapsed + write_limit_elapsed
@@ -172,6 +188,8 @@ def main() -> None:
             logger.exception("[%s/%s] %s failed: %s", idx, len(date_list), trade_date, exc)
         time.sleep(args.sleep)
 
+    for d in synced_dates:
+        mark_sync_done(d, "pull_daily")
     logger.info(
         "pull_daily_history done: days=%s skipped_non_trading=%s daily=%s adj=%s basic=%s limit=%s",
         len(date_list),
@@ -181,6 +199,12 @@ def main() -> None:
         total_basic,
         total_limit,
     )
+    if adj_failed_dates:
+        logger.warning(
+            "pull_daily_history adj_factor failed dates=%s count=%s",
+            ",".join(adj_failed_dates),
+            len(adj_failed_dates),
+        )
 
 
 if __name__ == "__main__":

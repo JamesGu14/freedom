@@ -14,6 +14,7 @@ SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings  # noqa: E402
+from app.data.mongo_data_sync_date import mark_sync_done  # noqa: E402
 from app.data.mongo_shenwan_member import (  # noqa: E402
     bulk_update_members,
     list_shenwan_members,
@@ -44,6 +45,12 @@ def parse_args() -> argparse.Namespace:
         "--incremental",
         action="store_true",
         help="Compare latest members and mark removed ones (only for is_new=Y without filters)",
+    )
+    parser.add_argument(
+        "--sync-date",
+        type=str,
+        default="",
+        help="YYYYMMDD run date to record in data_sync_date (default: today)",
     )
     return parser.parse_args()
 
@@ -181,6 +188,10 @@ def main() -> None:
     )
     upserted = upsert_shenwan_members(records)
     logger.info("upserted member records=%s", upserted)
+
+    sync_date = (args.sync_date or dt.datetime.now().strftime("%Y%m%d")).strip().replace("-", "")
+    if len(sync_date) == 8 and sync_date.isdigit():
+        mark_sync_done(sync_date, "sync_shenwan_members")
 
     incremental_allowed = (
         is_new == "Y"

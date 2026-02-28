@@ -22,6 +22,7 @@ router = APIRouter()
 
 class StrategyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    strategy_key: str = Field(min_length=1, max_length=80)
     description: str = ""
     owner: str = ""
 
@@ -75,6 +76,7 @@ def create_strategy_item(
     try:
         item = create_strategy(
             name=payload.name,
+            strategy_key=payload.strategy_key,
             description=payload.description,
             owner=payload.owner,
             created_by=username,
@@ -151,4 +153,3 @@ def create_strategy_version(
             raise HTTPException(status_code=404, detail=detail) from exc
         raise HTTPException(status_code=400, detail=detail) from exc
     return item
-

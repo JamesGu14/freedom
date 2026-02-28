@@ -33,3 +33,12 @@ def get_current_user(
     if user.get("status") == "disabled":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User disabled")
     return user
+
+
+def require_admin_user(
+    current_user: dict[str, object] = Depends(get_current_user),
+) -> dict[str, object]:
+    username = str(current_user.get("username") or "").strip().lower()
+    if username not in {"admin", "james"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
+    return current_user

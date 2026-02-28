@@ -1,6 +1,7 @@
 """API route modules."""
 
 from app.api.routes.backtests import router as backtests_router
+from app.api.routes.data_sync import router as data_sync_router
 from app.api.routes.daily_signals import router as daily_signals_router
 from app.api.routes.health import router as health_router
 from app.api.routes.auth import router as auth_router
@@ -17,6 +18,7 @@ from app.api.routes.users import router as users_router
 
 __all__ = [
     "backtests_router",
+    "data_sync_router",
     "daily_signals_router",
     "health_router",
     "auth_router",

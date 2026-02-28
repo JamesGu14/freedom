@@ -224,6 +224,20 @@ function AppShell({ Component, pageProps }) {
               <>
                 <div className="sidebar__divider" />
                 <Link
+                  href="/data-sync"
+                  className={`sidebar__item${isActive("/data-sync") ? " sidebar__item--active" : ""}`}
+                  title={collapsed ? "数据同步" : undefined}
+                >
+                  <span className="sidebar__icon">
+                    <Ico>
+                      <path d="M21 12a9 9 0 1 1-3.2-6.9" />
+                      <polyline points="21 3 21 9 15 9" />
+                      <path d="M3 12a9 9 0 0 0 15.5 6.4" />
+                    </Ico>
+                  </span>
+                  <span className="sidebar__label">数据同步</span>
+                </Link>
+                <Link
                   href="/users"
                   className={`sidebar__item${isActive("/users") ? " sidebar__item--active" : ""}`}
                   title={collapsed ? "用户管理" : undefined}

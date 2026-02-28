@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any
 
 import pandas as pd
@@ -14,16 +15,18 @@ from app.data.mongo_strategy_signal import (
     upsert_strategy_signals,
 )
 from app.quant.allocator import calc_target_amount, calc_target_weight
+from app.quant.params_registry import validate_and_normalize_params
 from app.quant.base import StrategyContext
 from app.quant.context import load_daily_data_bundle
 from app.quant.engine import (
-    DEFAULT_BACKTEST_PARAMS,
     _calc_list_days,
     _effective_score,
     _infer_board,
     _normalize_allowed_boards,
+    _normalize_index_code,
     _normalize_score_direction,
     _normalize_sector_source_weights,
+    _load_index_member_codes,
     _resolve_sector_strength,
     _to_bool,
     _to_float,
@@ -33,6 +36,7 @@ from app.quant.factors_sector import build_sector_strength_maps
 from app.quant.registry import load_strategy
 
 STRATEGY_PORTFOLIO_ID = "__strategy__"
+logger = logging.getLogger(__name__)
 
 
 def is_open_trade_date(trade_date: str, exchange: str = "SSE") -> bool:
@@ -140,14 +144,6 @@ def _load_strategy_versions(
     return [item for item in items if str(item.get("strategy_id") or "") in active_ids]
 
 
-def _merge_params(params_snapshot: dict[str, Any] | None) -> dict[str, Any]:
-    merged = dict(DEFAULT_BACKTEST_PARAMS)
-    if params_snapshot:
-        for key, value in params_snapshot.items():
-            merged[key] = value
-    return merged
-
-
 def _filter_frame(frame: pd.DataFrame, *, signal_date: str, params: dict[str, Any]) -> pd.DataFrame:
     if frame is None or frame.empty:
         return pd.DataFrame()
@@ -163,6 +159,19 @@ def _filter_frame(frame: pd.DataFrame, *, signal_date: str, params: dict[str, An
     data = data[data["amount"].fillna(0) >= _to_float(params.get("min_avg_amount_20d"), 25_000.0)]
     data = data[data["close"].notna() & data["open"].notna()]
     return data
+
+
+def _apply_universe_index_filter(frame: pd.DataFrame, *, signal_date: str, params: dict[str, Any]) -> pd.DataFrame:
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    index_code = _normalize_index_code(params.get("universe_index_code"))
+    if not index_code:
+        return frame
+    member_codes = _load_index_member_codes(index_code=index_code, start_date=signal_date, end_date=signal_date)
+    if not member_codes:
+        logger.warning("signal universe filter skipped: index=%s has no members on %s", index_code, signal_date)
+        return frame
+    return frame[frame["ts_code"].isin(member_codes)].copy()
 
 
 def _resolve_market_context(
@@ -221,6 +230,12 @@ def _build_signal_rows(
         if score >= buy_threshold:
             signal = "BUY"
             reason_codes = ["score_gte_buy_threshold"]
+            if (
+                _to_float(item.get("macd_hist"), 0.0) > 0
+                and _to_float(item.get("macd"), 0.0) < 0
+                and _to_float(item.get("macd_signal"), 0.0) < 0
+            ):
+                reason_codes.append("macd_zero_axis_golden_cross")
             target_weight = calc_target_weight(
                 score=score,
                 market_exposure=market_exposure,
@@ -331,13 +346,15 @@ def generate_strategy_signals_for_date(
     for version in versions:
         strategy_id_value = str(version.get("strategy_id") or "").strip()
         strategy_version_id_value = str(version.get("strategy_version_id") or "").strip()
-        params = _merge_params(dict(version.get("params_snapshot") or {}))
+        strategy_key = str(version.get("strategy_key") or "").strip() or str((version.get("params_snapshot") or {}).get("strategy_key") or "multifactor_v1")
+        params, _ = validate_and_normalize_params(strategy_key, dict(version.get("params_snapshot") or {}))
         market_regime, market_exposure = _resolve_market_context(
             market_factor_t=bundle.market_factor_t,
             params=params,
         )
 
-        frame = _filter_frame(bundle.frame_t, signal_date=signal_date, params=params)
+        frame = _apply_universe_index_filter(bundle.frame_t, signal_date=signal_date, params=params)
+        frame = _filter_frame(frame, signal_date=signal_date, params=params)
         if frame.empty:
             removed = delete_strategy_signals(
                 signal_date=signal_date,
@@ -374,7 +391,6 @@ def generate_strategy_signals_for_date(
         else:
             frame["sector_strength"] = frame["industry"].map(sector_strength_name_map).fillna(50.0)
 
-        strategy_key = str(params.get("strategy_key") or "multifactor_v1")
         strategy = load_strategy(strategy_key)
         strategy_context = StrategyContext(
             trade_date=signal_date,

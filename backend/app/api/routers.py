@@ -4,6 +4,7 @@ from app.api.routes import (
     auth_router,
     backtests_router,
     citic_sectors_router,
+    data_sync_router,
     daily_signals_router,
     health_router,
     market_index_router,
@@ -66,4 +67,7 @@ router.include_router(
 )
 router.include_router(
     backtests_router, tags=["backtests"], dependencies=[Depends(get_current_user)]
+)
+router.include_router(
+    data_sync_router, tags=["data_sync"], dependencies=[Depends(get_current_user)]
 )

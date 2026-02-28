@@ -34,14 +34,19 @@ def create_backtest_run_meta(
     strategy = get_strategy_definition(strategy_id)
     if not strategy:
         raise ValueError("strategy not found")
+    strategy_key = str(strategy.get("strategy_key") or "").strip() or "multifactor_v1"
     version = get_strategy_version(strategy_version_id)
     if not version:
         raise ValueError("strategy version not found")
     if str(version.get("strategy_id")) != strategy_id:
         raise ValueError("strategy_version_id does not belong to strategy_id")
+    version_key = str(version.get("strategy_key") or "").strip() or "multifactor_v1"
+    if version_key != strategy_key:
+        raise ValueError("strategy_key mismatch between strategy definition and strategy version")
     return create_backtest_run(
         strategy_id=strategy_id,
         strategy_version_id=strategy_version_id,
+        strategy_key=strategy_key,
         start_date=start_date,
         end_date=end_date,
         run_type=run_type,

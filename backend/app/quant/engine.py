@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from app.data.duckdb_backtest_store import list_open_trade_dates, list_stock_universe, normalize_date
+from app.data.tushare_client import fetch_index_weight
 from app.data.mongo_backtest import (
     clear_backtest_run_details,
     update_backtest_run,
@@ -220,6 +221,35 @@ def _normalize_sector_source_weights(value: Any) -> dict[str, float]:
     }
 
 
+def _normalize_index_code(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    if "." in text:
+        return text
+    return f"{text}.SH"
+
+
+def _load_index_member_codes(*, index_code: str, start_date: str, end_date: str) -> set[str]:
+    normalized_code = _normalize_index_code(index_code)
+    if not normalized_code:
+        return set()
+    try:
+        df = fetch_index_weight(index_code=normalized_code, start_date=start_date, end_date=end_date)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("load index members failed index=%s: %s", normalized_code, exc)
+        return set()
+    if df is None or df.empty:
+        logger.warning("index members empty index=%s in range=%s-%s", normalized_code, start_date, end_date)
+        return set()
+    source_col = "con_code" if "con_code" in df.columns else ("ts_code" if "ts_code" in df.columns else "")
+    if not source_col:
+        logger.warning("index members missing con_code/ts_code index=%s", normalized_code)
+        return set()
+    codes = {str(item).strip().upper() for item in df[source_col].dropna().tolist() if str(item).strip()}
+    return codes
+
+
 def _resolve_sector_strength(
     *,
     ts_code: Any,
@@ -317,6 +347,18 @@ def _apply_buy_quality_filters(
         ]
     if _to_bool(params.get("entry_require_macd_positive"), False):
         data = data[data["macd_hist"].fillna(0) > 0]
+    if _to_bool(params.get("entry_require_macd_zero_axis_cross"), False):
+        macd = pd.to_numeric(data.get("macd", pd.Series(0.0, index=data.index)), errors="coerce").fillna(0.0)
+        macd_signal = pd.to_numeric(
+            data.get("macd_signal", pd.Series(0.0, index=data.index)),
+            errors="coerce",
+        ).fillna(0.0)
+        macd_hist = pd.to_numeric(data.get("macd_hist", pd.Series(0.0, index=data.index)), errors="coerce").fillna(0.0)
+        data = data[
+            (macd_hist > 0)
+            & (macd < 0)
+            & (macd_signal < 0)
+        ]
 
     min_sector_strength = max(_to_float(params.get("entry_min_sector_strength"), 0.0), 0.0)
     if min_sector_strength > 0:
@@ -365,6 +407,12 @@ def _build_buy_reason_codes(
 
     if _to_bool(params.get("entry_require_macd_positive"), False) and _to_float(row.get("macd_hist"), 0.0) > 0:
         _push("macd_positive")
+    if (
+        _to_float(row.get("macd_hist"), 0.0) > 0
+        and _to_float(row.get("macd"), 0.0) < 0
+        and _to_float(row.get("macd_signal"), 0.0) < 0
+    ):
+        _push("macd_zero_axis_golden_cross")
 
     min_sector_strength = max(_to_float(params.get("entry_min_sector_strength"), 0.0), 0.0)
     sector_strength = _to_float(row.get("sector_strength"), 0.0)
@@ -468,6 +516,20 @@ class BacktestEngine:
         universe_df = list_stock_universe()
         if universe_df.empty:
             raise ValueError("stock universe is empty")
+        universe_index_code = _normalize_index_code(params.get("universe_index_code"))
+        if universe_index_code:
+            member_codes = _load_index_member_codes(
+                index_code=universe_index_code,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if member_codes:
+                universe_df = universe_df[universe_df["ts_code"].isin(member_codes)].copy()
+                logger.info("universe filtered by index=%s members=%s", universe_index_code, len(member_codes))
+            else:
+                logger.warning("universe filter skipped: index=%s has no members", universe_index_code)
+        if universe_df.empty:
+            raise ValueError("stock universe is empty after index filter")
 
         trade_index_map = {trade_date: idx for idx, trade_date in enumerate(open_dates)}
         portfolio = PortfolioState(initial_capital=initial_capital, cash=initial_capital, positions={})

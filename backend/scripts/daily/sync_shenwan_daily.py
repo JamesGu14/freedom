@@ -15,6 +15,7 @@ SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings  # noqa: E402
+from app.data.mongo_data_sync_date import mark_sync_done  # noqa: E402
 from app.data.mongo_shenwan import list_shenwan_industry  # noqa: E402
 from app.data.mongo_shenwan_daily import upsert_shenwan_daily  # noqa: E402
 from app.data.mongo_trade_calendar import is_trading_day  # noqa: E402
@@ -167,6 +168,7 @@ def main() -> None:
 
     total_upserted = 0
     skipped_non_trading = 0
+    synced_dates: list[str] = []
     progress = tqdm(date_list, total=len(date_list), desc="sync_shenwan_daily", unit="day", dynamic_ncols=True)
     for idx, trade_date in enumerate(progress, start=1):
         try:
@@ -176,12 +178,16 @@ def main() -> None:
                 continue
             inserted = sync_trade_date(trade_date, level_map)
             total_upserted += inserted
+            if inserted > 0:
+                synced_dates.append(trade_date)
             progress.set_postfix(date=trade_date, upserted=inserted, total=total_upserted)
         except Exception as exc:
             logger.exception("[%s/%s] %s failed: %s", idx, len(date_list), trade_date, exc)
         if args.sleep > 0:
             time.sleep(args.sleep)
 
+    for d in synced_dates:
+        mark_sync_done(d, "sync_shenwan_daily")
     logger.info(
         "sync_shenwan_daily done: days=%s skipped_non_trading=%s upserted=%s",
         len(date_list),

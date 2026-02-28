@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from app.quant.base import MultiFactorV1Strategy, StrategyProtocol
+from app.quant.base import MultiFactorV1Strategy, MuseCatV1Strategy, StrategyProtocol
 
 
 _REGISTRY: dict[str, type[StrategyProtocol]] = {
     MultiFactorV1Strategy.key: MultiFactorV1Strategy,
+    MuseCatV1Strategy.key: MuseCatV1Strategy,
 }
 
 
@@ -24,3 +25,6 @@ def load_strategy(key: str) -> StrategyProtocol:
         raise ValueError(f"strategy not found: {key}")
     return strategy_cls()
 
+
+def is_registered_strategy(key: str) -> bool:
+    return str(key or "").strip() in _REGISTRY

@@ -221,6 +221,31 @@ def fetch_index_dailybasic(
     return df
 
 
+def fetch_index_weight(
+    *,
+    index_code: str,
+    trade_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    if not index_code:
+        raise ValueError("index_code is required")
+    df = _request_with_retry(
+        lambda: _query_pro(
+            "index_weight",
+            params={
+                "index_code": index_code,
+                "trade_date": trade_date or "",
+                "start_date": start_date or "",
+                "end_date": end_date or "",
+            },
+        )
+    )
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
 def fetch_idx_factor_pro(
     *,
     ts_code: str | None = None,
