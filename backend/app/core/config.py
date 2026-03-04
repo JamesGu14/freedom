@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expires_minutes: int = 120
     refresh_token_expires_days: int = 7
+    internal_api_token: str = ""
     auth_cookie_domain: str | None = None
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
@@ -34,6 +35,13 @@ class Settings(BaseSettings):
     admin_password: str = "james1031"
 
     cors_allow_origins: str = "http://localhost:3000"
+
+    ai_runner_base_url: str = "http://host.docker.internal:18600"
+    ai_runner_token: str = ""
+    ai_runner_timeout_seconds: int = 90
+    ai_runner_max_retries: int = 2
+
+    feishu_webhook_url: str | None = None
 
 
 settings = Settings()

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.api.routes import (
+    agent_freedom_router,
     auth_router,
     backtests_router,
     citic_sectors_router,
@@ -22,6 +23,11 @@ from app.api.deps import get_current_user
 router = APIRouter()
 router.include_router(health_router, tags=["health"])
 router.include_router(auth_router, tags=["auth"])
+router.include_router(
+    agent_freedom_router,
+    tags=["agent_freedom"],
+    dependencies=[Depends(get_current_user)],
+)
 router.include_router(
     users_router, tags=["users"], dependencies=[Depends(get_current_user)]
 )

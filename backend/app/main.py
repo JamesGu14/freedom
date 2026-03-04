@@ -8,6 +8,7 @@ from app.data.mongo_stock import ensure_stock_basic_indexes
 from app.data.mongo_data_sync_job_run import ensure_data_sync_job_run_indexes
 from app.data.mongo_strategy_job_run import ensure_strategy_job_run_indexes
 from app.data.mongo_strategy_signal import ensure_strategy_signal_indexes
+from app.data.mongo_agent_freedom import ensure_agent_freedom_indexes
 
 
 def create_app() -> FastAPI:
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         ensure_strategy_signal_indexes()
         ensure_strategy_job_run_indexes()
         ensure_data_sync_job_run_indexes()
+        ensure_agent_freedom_indexes()
         from app.data.mongo_data_sync_date import ensure_data_sync_date_indexes
 
         ensure_data_sync_date_indexes()

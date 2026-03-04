@@ -27,6 +27,14 @@ services:
       REDIS_URL: redis://redis:6379/0
       MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
       ACCESS_TOKEN_EXPIRES_MINUTES: 2880
+      AI_RUNNER_BASE_URL: ${AI_RUNNER_BASE_URL:-http://host.docker.internal:18600}
+      AI_RUNNER_TOKEN: ${AI_RUNNER_TOKEN:-}
+      AI_RUNNER_TIMEOUT_SECONDS: ${AI_RUNNER_TIMEOUT_SECONDS:-90}
+      AI_RUNNER_MAX_RETRIES: ${AI_RUNNER_MAX_RETRIES:-2}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
     depends_on:
@@ -37,6 +45,7 @@ services:
     build:
       context: ./backend
     command: ["python", "/app/scripts/scheduler.py"]
+    profiles: ["legacy"]
     environment:
       TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       DATA_DIR: /data
@@ -44,6 +53,14 @@ services:
       REDIS_URL: redis://redis:6379/0
       MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
       ACCESS_TOKEN_EXPIRES_MINUTES: 2880
+      AI_RUNNER_BASE_URL: ${AI_RUNNER_BASE_URL:-http://host.docker.internal:18600}
+      AI_RUNNER_TOKEN: ${AI_RUNNER_TOKEN:-}
+      AI_RUNNER_TIMEOUT_SECONDS: ${AI_RUNNER_TIMEOUT_SECONDS:-90}
+      AI_RUNNER_MAX_RETRIES: ${AI_RUNNER_MAX_RETRIES:-2}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
     depends_on:
@@ -59,6 +76,74 @@ services:
       - "3000"
     depends_on:
       - backend
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-postgres-data:/var/lib/postgresql/data
+
+  airflow-init:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__WEBSERVER__RBAC: "True"
+    command: >
+      bash -c "airflow db migrate &&
+      airflow users create --username admin --password admin --firstname Air --lastname Flow --role Admin --email admin@example.com || true"
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/plugins:/opt/airflow/plugins
+    restart: "no"
+
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - postgres
+      - airflow-init
+      - backend
+    ports:
+      - "8088:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-change-me}
+      FREEDOM_BACKEND_API_BASE: http://backend:9000/api
+      FREEDOM_ADMIN_USERNAME: ${ADMIN_USERNAME:-james}
+      FREEDOM_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-james1031}
+    command: webserver
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/plugins:/opt/airflow/plugins
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - postgres
+      - airflow-init
+      - backend
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      FREEDOM_BACKEND_API_BASE: http://backend:9000/api
+      FREEDOM_ADMIN_USERNAME: ${ADMIN_USERNAME:-james}
+      FREEDOM_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-james1031}
+    command: scheduler
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/plugins:/opt/airflow/plugins
 
   redis:
     image: redis:7-alpine
@@ -89,6 +174,7 @@ services:
 
 volumes:
   redis-data:
+  airflow-postgres-data:
 
 networks:
   proxy:

@@ -78,6 +78,17 @@ const NAV = [
     ),
   },
   {
+    href: "/agent-freedom",
+    label: "财神爷",
+    icon: (
+      <Ico>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <circle cx="16" cy="15" r="1.5" />
+      </Ico>
+    ),
+  },
+  {
     href: "/market-index",
     label: "大盘指数",
     icon: (

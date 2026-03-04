@@ -279,6 +279,63 @@ def list_latest_daily_changes(ts_codes: list[str]) -> dict[str, dict[str, object
     return result
 
 
+def list_latest_daily_prices(ts_codes: list[str]) -> dict[str, dict[str, object]]:
+    if not ts_codes:
+        return {}
+
+    daily_root = settings.data_dir / "raw" / "daily"
+    if not daily_root.exists():
+        return {}
+
+    part_globs: list[str] = []
+    for code in ts_codes:
+        code_dir = daily_root / f"ts_code={code}"
+        if code_dir.exists():
+            part_globs.append(str(code_dir / "year=*/part-*.parquet"))
+    if not part_globs:
+        return {}
+
+    query = """
+        SELECT ts_code,
+               trade_date,
+               close,
+               pre_close,
+               COALESCE(pct_chg, (close - pre_close) / NULLIF(pre_close, 0) * 100) AS pct_chg
+        FROM (
+            SELECT ts_code,
+                   trade_date,
+                   close,
+                   pre_close,
+                   pct_chg,
+                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+            FROM read_parquet(?, hive_partitioning=1)
+        )
+        WHERE rn = 1
+    """
+    with get_connection(read_only=True) as con:
+        try:
+            rows = con.execute(query, [part_globs]).fetchdf()
+        except (duckdb.CatalogException, duckdb.IOException):
+            return {}
+
+    if rows.empty:
+        return {}
+
+    rows = rows.where(pd.notna(rows), None)
+    result: dict[str, dict[str, object]] = {}
+    for row in rows.to_dict(orient="records"):
+        ts_code = str(row.get("ts_code") or "").strip().upper()
+        if not ts_code:
+            continue
+        result[ts_code] = {
+            "trade_date": row.get("trade_date"),
+            "close": row.get("close"),
+            "pre_close": row.get("pre_close"),
+            "pct_chg": row.get("pct_chg"),
+        }
+    return result
+
+
 def list_last_n_days_pct_chg(
     ts_codes: list[str], n: int = 3
 ) -> dict[str, dict[str, object]]:
@@ -423,5 +480,4 @@ def get_next_trade_date(ts_codes: list[str], trade_date: str) -> str | None:
     if not row:
         return None
     return row[0] or None
-
 

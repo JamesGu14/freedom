@@ -191,6 +191,21 @@ def _resolve_market_context(
     return market_regime, market_exposure
 
 
+def _normalize_version_params_snapshot(version: dict[str, Any]) -> dict[str, Any]:
+    raw = version.get("params_snapshot") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    nested = raw.get("params_snapshot")
+    # Backward compatibility for malformed payloads like:
+    # {"name": "...", "description": "...", "strategy_key": "...", "params_snapshot": {...}}
+    if isinstance(nested, dict) and any(key in raw for key in ("name", "description")):
+        raw = dict(nested)
+    strategy_key = str(version.get("strategy_key") or "").strip()
+    if strategy_key and "strategy_key" not in raw:
+        raw["strategy_key"] = strategy_key
+    return raw
+
+
 def _build_signal_rows(
     *,
     signal_date: str,
@@ -346,113 +361,131 @@ def generate_strategy_signals_for_date(
     for version in versions:
         strategy_id_value = str(version.get("strategy_id") or "").strip()
         strategy_version_id_value = str(version.get("strategy_version_id") or "").strip()
-        strategy_key = str(version.get("strategy_key") or "").strip() or str((version.get("params_snapshot") or {}).get("strategy_key") or "multifactor_v1")
-        params, _ = validate_and_normalize_params(strategy_key, dict(version.get("params_snapshot") or {}))
-        market_regime, market_exposure = _resolve_market_context(
-            market_factor_t=bundle.market_factor_t,
-            params=params,
-        )
+        try:
+            params_snapshot = _normalize_version_params_snapshot(version)
+            strategy_key = str(version.get("strategy_key") or "").strip() or str(params_snapshot.get("strategy_key") or "multifactor_v1")
+            params, _ = validate_and_normalize_params(strategy_key, params_snapshot)
+            market_regime, market_exposure = _resolve_market_context(
+                market_factor_t=bundle.market_factor_t,
+                params=params,
+            )
 
-        frame = _apply_universe_index_filter(bundle.frame_t, signal_date=signal_date, params=params)
-        frame = _filter_frame(frame, signal_date=signal_date, params=params)
-        if frame.empty:
+            frame = _apply_universe_index_filter(bundle.frame_t, signal_date=signal_date, params=params)
+            frame = _filter_frame(frame, signal_date=signal_date, params=params)
+            if frame.empty:
+                removed = delete_strategy_signals(
+                    signal_date=signal_date,
+                    strategy_version_id=strategy_version_id_value,
+                    portfolio_id=portfolio_id,
+                )
+                version_stats.append(
+                    {
+                        "strategy_version_id": strategy_version_id_value,
+                        "status": "skipped",
+                        "reason": "no_candidates_after_filters",
+                        "removed": removed,
+                        "upserted": 0,
+                    }
+                )
+                continue
+
+            use_member_sector_mapping = _to_bool(params.get("use_member_sector_mapping"), True)
+            sector_source_weights = _normalize_sector_source_weights(params.get("sector_source_weights"))
+            if use_member_sector_mapping:
+                frame["sector_strength"] = frame.apply(
+                    lambda row: _resolve_sector_strength(
+                        ts_code=row.get("ts_code"),
+                        industry_name=row.get("industry"),
+                        shenwan_member_codes_map=shenwan_member_codes_map,
+                        citic_member_codes_map=citic_member_codes_map,
+                        sector_strength_name_map=sector_strength_name_map,
+                        sector_strength_sw_map=sector_strength_sw_map,
+                        sector_strength_ci_map=sector_strength_ci_map,
+                        source_weights=sector_source_weights,
+                    ),
+                    axis=1,
+                )
+            else:
+                frame["sector_strength"] = frame["industry"].map(sector_strength_name_map).fillna(50.0)
+
+            strategy = load_strategy(strategy_key)
+            strategy_context = StrategyContext(
+                trade_date=signal_date,
+                frame=frame,
+                market_regime=market_regime,
+                market_exposure=market_exposure,
+                params=params,
+            )
+            scored = strategy.score(strategy_context)
+            if scored is None or scored.empty:
+                removed = delete_strategy_signals(
+                    signal_date=signal_date,
+                    strategy_version_id=strategy_version_id_value,
+                    portfolio_id=portfolio_id,
+                )
+                version_stats.append(
+                    {
+                        "strategy_version_id": strategy_version_id_value,
+                        "status": "skipped",
+                        "reason": "score_empty",
+                        "removed": removed,
+                        "upserted": 0,
+                    }
+                )
+                continue
+
+            score_direction = _normalize_score_direction(params.get("score_direction"))
+            scored["raw_score"] = pd.to_numeric(scored.get("total_score"), errors="coerce").fillna(0.0)
+            scored["score"] = scored["raw_score"].apply(lambda x: _effective_score(x, score_direction))
+            scored = scored.sort_values(by=["score", "sector_strength", "ts_code"], ascending=[False, False, True])
+
+            rows = _build_signal_rows(
+                signal_date=signal_date,
+                signal_trade_date=signal_trade_date,
+                strategy_id=strategy_id_value,
+                strategy_version_id=strategy_version_id_value,
+                params=params,
+                scored=scored,
+                market_regime=market_regime,
+                market_exposure=market_exposure,
+                portfolio_id=portfolio_id,
+                portfolio_type=portfolio_type,
+            )
+
             removed = delete_strategy_signals(
                 signal_date=signal_date,
                 strategy_version_id=strategy_version_id_value,
                 portfolio_id=portfolio_id,
             )
+            upserted = upsert_strategy_signals(rows)
+            total_upserted += upserted
             version_stats.append(
                 {
                     "strategy_version_id": strategy_version_id_value,
-                    "status": "skipped",
-                    "reason": "no_candidates_after_filters",
+                    "status": "success",
+                    "reason": "",
                     "removed": removed,
-                    "upserted": 0,
+                    "upserted": upserted,
+                    "strategy_key": strategy_key,
+                    "market_regime": market_regime,
                 }
             )
-            continue
-
-        use_member_sector_mapping = _to_bool(params.get("use_member_sector_mapping"), True)
-        sector_source_weights = _normalize_sector_source_weights(params.get("sector_source_weights"))
-        if use_member_sector_mapping:
-            frame["sector_strength"] = frame.apply(
-                lambda row: _resolve_sector_strength(
-                    ts_code=row.get("ts_code"),
-                    industry_name=row.get("industry"),
-                    shenwan_member_codes_map=shenwan_member_codes_map,
-                    citic_member_codes_map=citic_member_codes_map,
-                    sector_strength_name_map=sector_strength_name_map,
-                    sector_strength_sw_map=sector_strength_sw_map,
-                    sector_strength_ci_map=sector_strength_ci_map,
-                    source_weights=sector_source_weights,
-                ),
-                axis=1,
-            )
-        else:
-            frame["sector_strength"] = frame["industry"].map(sector_strength_name_map).fillna(50.0)
-
-        strategy = load_strategy(strategy_key)
-        strategy_context = StrategyContext(
-            trade_date=signal_date,
-            frame=frame,
-            market_regime=market_regime,
-            market_exposure=market_exposure,
-            params=params,
-        )
-        scored = strategy.score(strategy_context)
-        if scored is None or scored.empty:
-            removed = delete_strategy_signals(
-                signal_date=signal_date,
-                strategy_version_id=strategy_version_id_value,
-                portfolio_id=portfolio_id,
+        except Exception as exc:
+            logger.exception(
+                "generate signals failed for strategy_version_id=%s strategy_id=%s",
+                strategy_version_id_value,
+                strategy_id_value,
             )
             version_stats.append(
                 {
                     "strategy_version_id": strategy_version_id_value,
-                    "status": "skipped",
-                    "reason": "score_empty",
-                    "removed": removed,
+                    "status": "degraded",
+                    "reason": f"version_exception:{exc}",
+                    "removed": 0,
                     "upserted": 0,
                 }
             )
             continue
-
-        score_direction = _normalize_score_direction(params.get("score_direction"))
-        scored["raw_score"] = pd.to_numeric(scored.get("total_score"), errors="coerce").fillna(0.0)
-        scored["score"] = scored["raw_score"].apply(lambda x: _effective_score(x, score_direction))
-        scored = scored.sort_values(by=["score", "sector_strength", "ts_code"], ascending=[False, False, True])
-
-        rows = _build_signal_rows(
-            signal_date=signal_date,
-            signal_trade_date=signal_trade_date,
-            strategy_id=strategy_id_value,
-            strategy_version_id=strategy_version_id_value,
-            params=params,
-            scored=scored,
-            market_regime=market_regime,
-            market_exposure=market_exposure,
-            portfolio_id=portfolio_id,
-            portfolio_type=portfolio_type,
-        )
-
-        removed = delete_strategy_signals(
-            signal_date=signal_date,
-            strategy_version_id=strategy_version_id_value,
-            portfolio_id=portfolio_id,
-        )
-        upserted = upsert_strategy_signals(rows)
-        total_upserted += upserted
-        version_stats.append(
-            {
-                "strategy_version_id": strategy_version_id_value,
-                "status": "success",
-                "reason": "",
-                "removed": removed,
-                "upserted": upserted,
-                "strategy_key": strategy_key,
-                "market_regime": market_regime,
-            }
-        )
 
     return {
         "signal_date": signal_date,
