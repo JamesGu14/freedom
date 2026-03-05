@@ -9,6 +9,7 @@ from app.api.routes import (
     data_sync_router,
     daily_signals_router,
     health_router,
+    market_data_router,
     market_index_router,
     signal_router,
     sector_ranking_router,
@@ -82,4 +83,7 @@ router.include_router(
 )
 router.include_router(
     data_sync_router, tags=["data_sync"], dependencies=[Depends(get_current_user)]
+)
+router.include_router(
+    market_data_router, tags=["market_data"], dependencies=[Depends(get_current_user)]
 )
