@@ -31,3 +31,26 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - mongo_stk_surv date field is surv_date (not trade_date) for indexes and queries
   - mongo_moneyflow_hsgt has unique index on trade_date
 ---
+
+## 2026-03-05 - US-003
+- Created backend/scripts/daily/sync_cyq_perf.py
+- Pulls full-market chip performance data daily via fetch_cyq_perf(trade_date=date)
+- Writes Parquet to data/features/cyq_perf/ts_code={ts_code}/year={year}/part-{uuid}.parquet
+- Uses year_frames buffer pattern from sync_stk_factor_pro.py
+- Fields: ts_code, trade_date, his_low, his_high, cost_5pct, cost_15pct, cost_50pct, cost_85pct, cost_95pct, weight_avg, winner_rate
+- Files changed: backend/scripts/daily/sync_cyq_perf.py
+- **Learnings for future iterations:**
+  - sync_cyq_perf.py is a near-identical copy of sync_stk_factor_pro.py with no RENAME_MAP (cyq_perf fields don't need renaming)
+  - postfix shows date/api_rows/stocks (no separate buffered count unlike stk_factor_pro)
+  - No ts_code parameter passed to API — fetches entire market per trade_date
+---
+
+## 2026-03-05 - US-004
+- Created backend/scripts/daily/sync_moneyflow_dc.py
+- Near-identical copy of sync_cyq_perf.py with fetch_moneyflow_dc, different OUTPUT_COLUMNS, output path data/features/moneyflow_dc/
+- Handles empty DataFrames gracefully (dates before 2023-09-11 have no data — expected)
+- Files changed: backend/scripts/daily/sync_moneyflow_dc.py
+- **Learnings for future iterations:**
+  - sync_moneyflow_dc.py is a direct copy of sync_cyq_perf.py; only API function, OUTPUT_COLUMNS, output path, and sync tag differ
+  - Empty DataFrame before 2023-09-11 is expected and handled by the existing no_data branch
+---

@@ -59,7 +59,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "严格复用 sync_stk_factor_pro.py 的结构：parse_args, resolve_dates, load_open_dates, transform, save, flush_year_buffer, main。SCRIPT_ROOT设置同sync_stk_factor_pro.py。"
     },
     {
@@ -78,7 +78,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "与sync_cyq_perf.py几乎完全相同，只是API名、字段列表、输出路径不同。"
     },
     {
