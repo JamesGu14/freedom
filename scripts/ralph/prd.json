@@ -213,7 +213,7 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "路由注册模式参考routers.py中已有的写法：router.include_router(market_data_router, tags=['market_data'], dependencies=[Depends(get_current_user)])。Parquet查询参考已有的duckdb_client或直接使用duckdb.connect(settings.duckdb_path)。"
     },
     {

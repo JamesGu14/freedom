@@ -143,3 +143,18 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - DEFAULT_MARKET_INDEX_CODES in mongo_market_index.py is the fallback for market indices
   - Pattern: index-loop scripts don't call mark_sync_done (only per-day scripts do)
 ---
+
+## 2026-03-06 - US-011
+- Created backend/app/services/market_data_service.py with 8 query functions: get_cyq_perf, get_cyq_chips, get_ccass_hold, get_hk_hold, get_stk_surv, get_moneyflow_dc, get_moneyflow_hsgt, get_index_factors
+- Created backend/app/api/routes/market_data.py with 8 endpoints: GET /chip-perf/{ts_code}, /chip-distribution/{ts_code}, /ccass-hold/{ts_code}, /hk-hold/{ts_code}, /institution-survey/{ts_code}, /moneyflow-dc/{ts_code}, /moneyflow-hsgt, /index-factors/{ts_code}
+- Updated backend/app/api/routes/__init__.py to export market_data_router
+- Updated backend/app/api/routers.py to register market_data_router with get_current_user dependency and tag "market_data"
+- Parquet queries use _query_parquet() helper via duckdb get_connection(read_only=True) + read_parquet glob pattern with union_by_name=true
+- MongoDB queries delegate to existing mongo_*.py query functions
+- Files changed: backend/app/services/market_data_service.py, backend/app/api/routes/market_data.py, backend/app/api/routes/__init__.py, backend/app/api/routers.py
+- **Learnings for future iterations:**
+  - Parquet read pattern: use read_parquet(glob, union_by_name=True) with WHERE trade_date BETWEEN ? AND ? ORDER BY trade_date DESC
+  - hk-hold endpoint passes exchange as optional query param; if provided, uses query_by_exchange instead of query_by_ts_code
+  - moneyflow-hsgt has no ts_code path param (aggregate data, not per-stock)
+  - All Query(...) params without default make start_date/end_date required (returns 422 if missing)
+---
