@@ -134,7 +134,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "2024-08后北向(SH/SZ)停止日频，只有南向(HK)有数据，脚本需优雅处理空响应。"
     },
     {

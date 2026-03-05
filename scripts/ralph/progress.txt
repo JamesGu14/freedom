@@ -82,3 +82,17 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - mark_sync_done called per-date inside the loop (on success), not once at the end
   - Empty DataFrame handling is the same: log status="no_data" and continue
 ---
+
+## 2026-03-05 - US-007
+- Created backend/scripts/daily/sync_hk_hold.py
+- Per-trading-day loop, calls fetch_hk_hold 3x per day (exchange=SH, SZ, HK), merges results, upserts via mongo_hk_hold.upsert_batch()
+- Empty SH/SZ responses after 2024-08 handled gracefully (logged at DEBUG, not an error)
+- Sleep is divided across 3 exchange calls (sleep/3 each) to maintain total rate limiting
+- Fields: code, trade_date, ts_code, name, vol, ratio, exchange
+- upsert key: (ts_code, trade_date, exchange)
+- Files changed: backend/scripts/daily/sync_hk_hold.py
+- **Learnings for future iterations:**
+  - Per-exchange fetch failures are caught individually (warning log), not fatal — allows partial success per day
+  - mark_sync_done called once per day after all 3 exchanges merged and upserted
+  - Sleep distributed across 3 sub-calls to maintain API rate limits
+---
