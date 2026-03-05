@@ -1,3 +1,21 @@
 # Ralph Progress Log
 Started: 2026年 03月 05日 星期四 16:27:57 CST
+
+## Codebase Patterns
+- TuShare fetch functions: use `_request_with_retry(lambda: _query_pro(...))` pattern; filter empty string params with dict comprehension `{k: v for k, v in {...}.items() if v}`
+- Sync scripts use `sync_stk_factor_pro.py` as template: parse_args, resolve_dates, load_open_dates, year_frames buffer, flush_year_buffer, mark_sync_done
+- MongoDB modules: use `from app.data.mongo import get_collection`; upsert via `UpdateOne(filter, {'$set': doc}, upsert=True)` with `bulk_write`
+- API routes: register in `app/api/routes/__init__.py` and `app/api/routers.py` with `dependencies=[Depends(get_current_user)]`
+- No mypy/pyright installed; typecheck = Python parses and imports cleanly
+---
+
+## 2026-03-05 - US-001
+- Implemented 8 TuShare fetch functions in backend/app/data/tushare_client.py
+- Functions added: fetch_cyq_perf, fetch_cyq_chips, fetch_ccass_hold, fetch_hk_hold, fetch_stk_surv, fetch_moneyflow_dc, fetch_moneyflow_hsgt, fetch_idx_factor_pro
+- Files changed: backend/app/data/tushare_client.py
+- **Learnings for future iterations:**
+  - All functions use {k: v for k, v in params.items() if v} to filter empty strings
+  - fetch_idx_factor_pro was already partially in codebase; extended with full signature
+  - fetch_cyq_chips uses positional ts_code (not keyword-only) per PRD spec
+  - No mypy/pyright available — typecheck verified via Python import + ast.parse
 ---

@@ -291,3 +291,104 @@ def fetch_stk_factor_pro(
     if df is None:
         return pd.DataFrame()
     return df
+
+
+def fetch_cyq_perf(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("cyq_perf", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_cyq_chips(
+    ts_code: str,
+    *,
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params: dict[str, object] = {"ts_code": ts_code}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    df = _request_with_retry(lambda: _query_pro("cyq_chips", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_ccass_hold(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("ccass_hold", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_hk_hold(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    exchange: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date, "exchange": exchange}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("hk_hold", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_stk_surv(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("stk_surv", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_moneyflow_dc(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("moneyflow_dc", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_moneyflow_hsgt(
+    *,
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("moneyflow_hsgt", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
