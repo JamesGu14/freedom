@@ -97,7 +97,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "此接口无需按股票循环，直接按日期段批量拉取。参考sync_shenwan_daily.py的MongoDB写入模式。"
     },
     {

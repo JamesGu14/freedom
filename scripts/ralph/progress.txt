@@ -54,3 +54,18 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - sync_moneyflow_dc.py is a direct copy of sync_cyq_perf.py; only API function, OUTPUT_COLUMNS, output path, and sync tag differ
   - Empty DataFrame before 2023-09-11 is expected and handled by the existing no_data branch
 ---
+
+## 2026-03-05 - US-005
+- Created backend/scripts/daily/sync_moneyflow_hsgt.py
+- Fetches HSGT aggregate money flow by date range (not per-day), up to 300 records per call (~1 year)
+- Chunks large date ranges into 240-day windows for multi-year backfills
+- Writes to MongoDB via mongo_moneyflow_hsgt.upsert_batch()
+- Fields: trade_date, ggt_ss, ggt_sz, hgt, sgt, north_money, south_money
+- Calls mark_sync_done(end_date, 'sync_moneyflow_hsgt') once at completion
+- Files changed: backend/scripts/daily/sync_moneyflow_hsgt.py
+- **Learnings for future iterations:**
+  - moneyflow_hsgt is a date-range batch API, not per-day — no trading-day loop needed
+  - Default sleep=0.5 (lighter than per-day scripts that use 2.0)
+  - resolve_dates returns (start_date, end_date) tuple rather than a list of dates
+  - build_chunks() splits multi-year ranges into ~240 calendar day windows
+---
