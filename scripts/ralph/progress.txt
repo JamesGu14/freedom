@@ -158,3 +158,18 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - moneyflow-hsgt has no ts_code path param (aggregate data, not per-stock)
   - All Query(...) params without default make start_date/end_date required (returns 422 if missing)
 ---
+
+## 2026-03-06 - US-012
+- Updated backend/scripts/daily/daily.sh: TOTAL_STEPS 7 → 12
+- Step 8: sync_cyq_perf.py --start-date --end-date (daily)
+- Step 9: sync_moneyflow_dc.py --start-date --end-date (daily)
+- Step 10: sync_moneyflow_hsgt.py --start-date --end-date (daily)
+- Step 11: sync_ccass_hold.py + sync_hk_hold.py (Friday only, reuse TARGET_WEEKDAY)
+- Step 12: sync_stk_surv.py --last-days 7 (Friday only)
+- sync_cyq_chips.py and sync_idx_factor_pro.py NOT added (historical-only, too slow for daily)
+- Files changed: backend/scripts/daily/daily.sh, scripts/ralph/prd.json, scripts/ralph/progress.txt
+- **Learnings for future iterations:**
+  - Steps 11/12 reuse the existing TARGET_WEEKDAY variable set in Step 4 logic
+  - Step 11 chains two Python scripts with && so both must succeed
+  - sync_stk_surv uses --last-days 7 (not --start-date/--end-date) for weekly runs
+---

@@ -232,7 +232,7 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "cyq_chips和idx_factor_pro因为是按股票/指数循环，每日运行耗时过长，不加入daily.sh。只在历史全量同步时手动运行。TARGET_WEEKDAY变量在daily.sh中已经存在，Step 11/12直接复用即可。"
     }
   ]
