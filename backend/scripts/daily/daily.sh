@@ -86,7 +86,7 @@ conda activate freedom
 
 echo "[INFO] $(date '+%F %T') start daily tasks for ${START_DATE} to ${END_DATE}" | tee -a "${LOG_FILE}"
 
-TOTAL_STEPS=7
+TOTAL_STEPS=12
 
 run_step_task() {
   local step_no="$1"
@@ -174,6 +174,29 @@ if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
   run_step_task "7" "压缩Parquet文件(每周五)" "python backend/scripts/daily/compact_parquet.py --dataset all --sync-date ${END_DATE}"
 else
   skip_step "7" "压缩Parquet文件(每周五)" "非周五"
+fi
+
+# 8) Sync chip performance (cyq_perf) - daily
+run_step_task "8" "同步筹码胜率(cyq_perf)" "python backend/scripts/daily/sync_cyq_perf.py --start-date ${START_DATE} --end-date ${END_DATE}"
+
+# 9) Sync DC money flow (moneyflow_dc) - daily
+run_step_task "9" "同步东方财富资金流(moneyflow_dc)" "python backend/scripts/daily/sync_moneyflow_dc.py --start-date ${START_DATE} --end-date ${END_DATE}"
+
+# 10) Sync HSGT money flow (moneyflow_hsgt) - daily
+run_step_task "10" "同步港通资金流(moneyflow_hsgt)" "python backend/scripts/daily/sync_moneyflow_hsgt.py --start-date ${START_DATE} --end-date ${END_DATE}"
+
+# 11) Sync CCASS + HK hold (weekly, Friday only)
+if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
+  run_step_task "11" "同步CCASS持股+港股通持股(每周五)" "python backend/scripts/daily/sync_ccass_hold.py --start-date ${START_DATE} --end-date ${END_DATE} && python backend/scripts/daily/sync_hk_hold.py --start-date ${START_DATE} --end-date ${END_DATE}"
+else
+  skip_step "11" "同步CCASS持股+港股通持股(每周五)" "非周五"
+fi
+
+# 12) Sync institution survey (weekly, Friday only)
+if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
+  run_step_task "12" "同步机构调研(每周五)" "python backend/scripts/daily/sync_stk_surv.py --last-days 7"
+else
+  skip_step "12" "同步机构调研(每周五)" "非周五"
 fi
 
 echo "[INFO] $(date '+%F %T') done" | tee -a "${LOG_FILE}"
