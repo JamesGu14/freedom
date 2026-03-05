@@ -397,6 +397,7 @@ def get_market_index_chart(
 def get_market_index_factors(
     *,
     ts_code: str,
+    source: str = "market",
     start_date: str | None = None,
     end_date: str | None = None,
     limit: int = 120,
@@ -404,7 +405,11 @@ def get_market_index_factors(
     if not ts_code:
         return []
 
-    query: dict[str, object] = {"ts_code": ts_code, "source": "market"}
+    source_value = str(source or "market").strip().lower()
+    if source_value not in {"market", "sw", "ci"}:
+        source_value = "market"
+
+    query: dict[str, object] = {"ts_code": ts_code, "source": source_value}
     query.update(_build_trade_date_query(start_date=start_date, end_date=end_date))
 
     rows = list(

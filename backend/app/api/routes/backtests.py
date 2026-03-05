@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.api.stock_code import resolve_ts_code_input
 from app.api.deps import get_current_user
 from app.services.backtest_service import (
     compare_backtests,
@@ -148,11 +149,12 @@ def list_backtest_trade_items(
         normalized_trade_date = str(trade_date).strip().replace("-", "")
         if len(normalized_trade_date) != 8 or not normalized_trade_date.isdigit():
             raise HTTPException(status_code=400, detail="invalid trade_date, use YYYYMMDD or YYYY-MM-DD")
+    normalized_ts_code = resolve_ts_code_input(ts_code, strict=False) if ts_code else None
     items, total = get_backtest_trades(
         run_id=run_id,
         page=page,
         page_size=page_size,
-        ts_code=ts_code,
+        ts_code=normalized_ts_code,
         trade_date=normalized_trade_date,
     )
     return {
@@ -173,8 +175,9 @@ def list_backtest_trade_items_by_code(
     run = get_backtest_detail(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
-    items = get_backtest_trades_by_code(run_id=run_id, ts_code=ts_code, limit=limit)
-    return {"run_id": run_id, "items": items, "total": len(items)}
+    normalized = resolve_ts_code_input(ts_code, strict=False)
+    items = get_backtest_trades_by_code(run_id=run_id, ts_code=normalized, limit=limit)
+    return {"run_id": run_id, "ts_code": normalized, "items": items, "total": len(items)}
 
 
 @router.get("/backtests/{run_id}/positions")

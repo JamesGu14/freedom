@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 
 from app.api.routers import router as api_router
 from app.core.config import settings
@@ -13,7 +14,12 @@ from app.data.mongo_agent_freedom import ensure_agent_freedom_indexes
 
 def create_app() -> FastAPI:
     configure_logging(settings.log_level)
-    application = FastAPI(title=settings.app_name)
+    application = FastAPI(
+        title=settings.app_name,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=f"{settings.api_prefix}/openapi.json",
+    )
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[origin.strip() for origin in settings.cors_allow_origins.split(",") if origin.strip()],
@@ -22,6 +28,21 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(api_router, prefix=settings.api_prefix)
+
+    @application.get(f"{settings.api_prefix}/docs", include_in_schema=False)
+    def swagger_ui_html():
+        # Use relative OpenAPI URL so `/freedom/api/docs` works correctly behind nginx basePath.
+        return get_swagger_ui_html(
+            openapi_url="openapi.json",
+            title=f"{settings.app_name} - Swagger UI",
+        )
+
+    @application.get(f"{settings.api_prefix}/redoc", include_in_schema=False)
+    def redoc_html():
+        return get_redoc_html(
+            openapi_url="openapi.json",
+            title=f"{settings.app_name} - ReDoc",
+        )
 
     @application.on_event("startup")
     def _startup() -> None:

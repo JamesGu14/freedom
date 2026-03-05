@@ -108,9 +108,10 @@ skip_step() {
 # 当用户显式传入日期区间时，不在此处提前退出，由各任务按交易日自行处理。
 if [[ "${HAS_DATE_ARGS}" == "0" ]]; then
   echo "[INFO] $(date '+%F %T') start check_trade_calendar" | tee -a "${LOG_FILE}"
-CHECK_DATE="${END_DATE//-/}"
+# Bug fix: check TODAY's date, not END_DATE (which is always a trading day)
+TODAY_DATE="$(date +%Y%m%d)"
 IS_OPEN="$(
-CHECK_DATE="${CHECK_DATE}" PYTHONPATH="${ROOT_DIR}/backend" python - <<'PY'
+CHECK_DATE="${TODAY_DATE}" PYTHONPATH="${ROOT_DIR}/backend" python - <<'PY'
 import sys
 from app.data.mongo_trade_calendar import is_trading_day
 
@@ -122,11 +123,11 @@ PY
   echo "[INFO] $(date '+%F %T') end check_trade_calendar" | tee -a "${LOG_FILE}"
 
   if [[ "${IS_OPEN}" != "1" ]]; then
-    echo "[INFO] ${CHECK_DATE} is not a trading day, skip." | tee -a "${LOG_FILE}"
+    echo "[INFO] ${TODAY_DATE} is not a trading day, skip." | tee -a "${LOG_FILE}"
     exit 0
   fi
 
-  echo "[INFO] ${CHECK_DATE} is trading day, running tasks..." | tee -a "${LOG_FILE}"
+  echo "[INFO] ${TODAY_DATE} is trading day, running tasks..." | tee -a "${LOG_FILE}"
 else
   echo "[INFO] date range provided, skip global today-trading-day guard" | tee -a "${LOG_FILE}"
 fi
@@ -142,7 +143,12 @@ skip_step "3" "计算每日信号" "暂时注释禁用"
 # run_step_task "3" "计算每日信号" "cd /home/james/projects/freedom/backend && python -m scripts.daily.calculate_signal --start-date ${START_DATE} --end-date ${END_DATE}"
 
 # 4) Sync Shenwan industry members (incremental)
-TARGET_WEEKDAY="$(
+# Bug fix: when no date args, use today's calendar weekday (not END_DATE's weekday,
+# which is always a trading day and causes weekly tasks to re-run on weekends).
+if [[ "${HAS_DATE_ARGS}" == "0" ]]; then
+  TARGET_WEEKDAY="$(python3 -c "import datetime; print(datetime.datetime.now().isoweekday())")"
+else
+  TARGET_WEEKDAY="$(
 END_DATE="${END_DATE}" PYTHONPATH="${ROOT_DIR}/backend" python - <<'PY'
 import datetime as dt
 import os
@@ -150,6 +156,7 @@ text = str(os.environ.get("END_DATE", "")).replace("-", "")
 print(dt.datetime.strptime(text, "%Y%m%d").isoweekday())
 PY
 )"
+fi
 if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
   run_step_task "4" "同步申万行业成分(每周五)" "python backend/scripts/daily/sync_shenwan_members.py --incremental --sync-date ${END_DATE}"
 else

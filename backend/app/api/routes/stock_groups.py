@@ -6,13 +6,16 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.stock_code import resolve_ts_code_input
 from app.data.mongo_groups import (
     add_stock_to_group,
     create_group,
+    delete_group_with_items,
     get_group,
     list_group_items,
     list_groups,
     remove_stock_from_group,
+    update_group_name,
 )
 from app.data.mongo_stock import get_stock_by_code
 from app.services.stocks_service import get_latest_daily_changes
@@ -26,6 +29,10 @@ class StockGroupCreatePayload(BaseModel):
 
 class StockGroupAddPayload(BaseModel):
     ts_code: str = Field(min_length=1, max_length=32)
+
+
+class StockGroupUpdatePayload(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
 
 
 def _parse_group_id(group_id: str) -> ObjectId:
@@ -72,6 +79,23 @@ def get_stock_group(group_id: str) -> dict[str, object]:
     return _serialize_group(group)
 
 
+@router.put("/stock-groups/{group_id}")
+def update_stock_group(group_id: str, payload: StockGroupUpdatePayload) -> dict[str, object]:
+    group = update_group_name(_parse_group_id(group_id), payload.name.strip())
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return _serialize_group(group)
+
+
+@router.delete("/stock-groups/{group_id}")
+def delete_stock_group(group_id: str) -> dict[str, object]:
+    group_obj_id = _parse_group_id(group_id)
+    if not get_group(group_obj_id):
+        raise HTTPException(status_code=404, detail="Group not found")
+    deleted, deleted_items = delete_group_with_items(group_obj_id)
+    return {"deleted": deleted, "group_id": str(group_obj_id), "deleted_items": deleted_items}
+
+
 @router.get("/stock-groups/{group_id}/stocks")
 def list_group_stocks(group_id: str) -> dict[str, list[dict[str, object]]]:
     group_obj_id = _parse_group_id(group_id)
@@ -103,7 +127,7 @@ def add_group_stock(group_id: str, payload: StockGroupAddPayload) -> dict[str, b
     group_obj_id = _parse_group_id(group_id)
     if not get_group(group_obj_id):
         raise HTTPException(status_code=404, detail="Group not found")
-    ts_code = payload.ts_code.strip()
+    ts_code = resolve_ts_code_input(payload.ts_code, strict=False)
     stock = get_stock_by_code(ts_code)
     if not stock:
         raise HTTPException(status_code=400, detail="Stock not found")
@@ -116,5 +140,5 @@ def remove_group_stock(group_id: str, ts_code: str) -> dict[str, bool]:
     group_obj_id = _parse_group_id(group_id)
     if not get_group(group_obj_id):
         raise HTTPException(status_code=404, detail="Group not found")
-    removed = remove_stock_from_group(group_obj_id, ts_code.strip())
+    removed = remove_stock_from_group(group_obj_id, resolve_ts_code_input(ts_code, strict=False))
     return {"removed": removed}
