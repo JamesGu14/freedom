@@ -191,7 +191,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "中信行业指数代码参考：399001.SZ系列和000300.SH等主要指数。如果不确定中信指数列表，可从MongoDB的citic_sector_daily集合中提取distinct ts_code。"
     },
     {

@@ -127,3 +127,19 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - No mark_sync_done call (cyq_chips is historical data, not daily incremental)
   - Script does NOT check settings.tushare_token at startup (unlike other daily sync scripts)
 ---
+
+## 2026-03-06 - US-010
+- Created backend/scripts/daily/sync_idx_factor_pro.py
+- Index-loop based (like sync_cyq_chips.py): iterates over all indices, not dates
+- Index list sourced from: DEFAULT_MARKET_INDEX_CODES + market_index_dailybasic distinct ts_code + shenwan_industry distinct index_code + citic_industry distinct index_code
+- Year-split strategy for ranges > 2 years; partition_exists() check for resume support
+- Fields: ts_code, trade_date, open, high, low, close, pre_close, change, pct_change, vol, amount, macd_bfq, macd_dea_bfq, macd_dif_bfq, kdj_k_bfq, kdj_d_bfq, kdj_j_bfq, rsi_6_bfq, rsi_12_bfq, boll_upper_bfq, boll_mid_bfq, boll_lower_bfq, ma5_bfq, ma10_bfq, ma20_bfq, ma30_bfq, ma60_bfq, ma90_bfq, ma250_bfq
+- Writes to data/features/idx_factor_pro/ts_code={ts_code}/year={year}/part-{uuid}.parquet
+- No mark_sync_done call (historical data, not daily incremental)
+- Files changed: backend/scripts/daily/sync_idx_factor_pro.py, scripts/ralph/prd.json, scripts/ralph/progress.txt
+- **Learnings for future iterations:**
+  - Index list build from 3 MongoDB sources with graceful fallback per source
+  - SW index field is `index_code`, CITIC index field is `index_code` (same field name, different collections)
+  - DEFAULT_MARKET_INDEX_CODES in mongo_market_index.py is the fallback for market indices
+  - Pattern: index-loop scripts don't call mark_sync_done (only per-day scripts do)
+---
