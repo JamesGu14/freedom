@@ -112,3 +112,18 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - surv_date needs dash stripping (YYYY-MM-DD → YYYYMMDD) in transform_df
   - mark_sync_done called once at end (not per-chunk), same as moneyflow_hsgt pattern
 ---
+
+## 2026-03-06 - US-009
+- sync_cyq_chips.py was already implemented and committed (e8a39bc); PRD passes flag updated to true
+- Script iterates by stock (not by date): gets ts_code list from MongoDB stock_basic via get_stock_collection()
+- Supports --ts-codes for manual stock selection; year-by-year splitting when end_year - start_year > 2
+- Resume support: per-year partition_exists() check skips already-synced ts_code/year combinations
+- Fields: ts_code, trade_date, price, percent; dedup by (ts_code, trade_date, price)
+- Files changed: backend/scripts/daily/sync_cyq_chips.py (already committed), scripts/ralph/prd.json, scripts/ralph/progress.txt
+- **Learnings for future iterations:**
+  - sync_cyq_chips is stock-loop based (not date-loop): no open_dates/trade_calendar check needed
+  - Year-split strategy: proactively splits by year for ranges > 2 years (instead of reacting to 2000-row limit)
+  - Resume check happens per-year inside year-split path; non-split path re-fetches on retry
+  - No mark_sync_done call (cyq_chips is historical data, not daily incremental)
+  - Script does NOT check settings.tushare_token at startup (unlike other daily sync scripts)
+---

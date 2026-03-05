@@ -172,7 +172,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "cyq_chips数据量大（预计15-35GB全量），按ts_code逐只拉取是必要的（按日期批量拉会超出2000条限制）。历史全量同步可能需要数天，脚本需支持断点续传（已存在的ts_code/year分区可跳过）。"
     },
     {
