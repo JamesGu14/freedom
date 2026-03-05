@@ -115,7 +115,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "按日期拉取，一次最多5000条，覆盖所有在CCASS的A股标的。"
     },
     {

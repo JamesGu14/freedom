@@ -69,3 +69,16 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - resolve_dates returns (start_date, end_date) tuple rather than a list of dates
   - build_chunks() splits multi-year ranges into ~240 calendar day windows
 ---
+
+## 2026-03-05 - US-006
+- Created backend/scripts/daily/sync_ccass_hold.py
+- Per-trading-day loop: calls fetch_ccass_hold(trade_date=date), upserts via mongo_ccass_hold.upsert_batch()
+- Skips non-trading days via load_open_dates (SSE trade_calendar)
+- Fields: trade_date, ts_code, name, shareholding, hold_nums, hold_ratio
+- Calls mark_sync_done(date, 'sync_ccass_hold') per successfully synced day
+- Files changed: backend/scripts/daily/sync_ccass_hold.py
+- **Learnings for future iterations:**
+  - sync_ccass_hold is a near-identical copy of sync_cyq_perf but writes to MongoDB instead of Parquet — no year_frames buffer needed
+  - mark_sync_done called per-date inside the loop (on success), not once at the end
+  - Empty DataFrame handling is the same: log status="no_data" and continue
+---
