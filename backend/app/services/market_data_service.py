@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import duckdb
+import pandas as pd
 
 from app.core.config import settings
 from app.data import mongo_ccass_hold, mongo_hk_hold, mongo_moneyflow_hsgt, mongo_stk_surv
@@ -25,11 +26,10 @@ def _query_parquet(
     with get_connection(read_only=True) as con:
         try:
             rows = con.execute(query, [part_glob, ts_code, start_date, end_date]).fetchdf()
-        except duckdb.CatalogException:
+        except (duckdb.CatalogException, duckdb.IOException):
             return []
     if rows.empty:
         return []
-    import pandas as pd
     rows = rows.where(pd.notna(rows), None)
     return rows.to_dict(orient="records")
 

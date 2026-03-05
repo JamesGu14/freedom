@@ -182,26 +182,24 @@ def sync_index(ts_code: str, start_date: str, end_date: str, sleep_sec: float) -
         start_year = int(start_date[:4]) if start_date else 2010
         end_year = int(end_date[:4]) if end_date else dt.datetime.now().year
 
-        # Split by year if range is large to avoid record limits
-        if end_year - start_year > 2:
-            all_data = []
-            for year in range(start_year, end_year + 1):
-                if partition_exists(ts_code, str(year)):
-                    continue
+        # Always iterate year-by-year: uses partition_exists to skip already-synced
+        # years (resume support) and avoids duplicate writes on re-runs.
+        all_data = []
+        for year in range(start_year, end_year + 1):
+            if partition_exists(ts_code, str(year)):
+                continue
 
-                year_start = f"{year}0101"
-                year_end = f"{year}1231"
-                df = fetch_idx_factor_pro(ts_code=ts_code, start_date=year_start, end_date=year_end)
-                if df is not None and not df.empty:
-                    all_data.append(df)
-                time.sleep(sleep_sec)
+            year_start = f"{year}0101"
+            year_end = f"{year}1231"
+            df = fetch_idx_factor_pro(ts_code=ts_code, start_date=year_start, end_date=year_end)
+            if df is not None and not df.empty:
+                all_data.append(df)
+            time.sleep(sleep_sec)
 
-            df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
-        else:
-            df = fetch_idx_factor_pro(ts_code=ts_code, start_date=start_date, end_date=end_date)
-
-        if df is None or df.empty:
+        if not all_data:
             return {"status": "no_data", "rows": 0}
+
+        df = pd.concat(all_data, ignore_index=True)
 
         transformed = transform_df(df, ts_code)
         if transformed.empty:

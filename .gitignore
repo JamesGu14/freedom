@@ -20,6 +20,8 @@ logs/
 
 settings.local.json
 scripts/ralph/.last-branch
+scripts/ralph/prd.json
+scripts/ralph/progress.txt
 
 # C extensions
 *.so
