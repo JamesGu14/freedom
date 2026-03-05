@@ -18,6 +18,9 @@ __pycache__/
 bak/
 logs/
 
+settings.local.json
+scripts/ralph/.last-branch
+
 # C extensions
 *.so
 
