@@ -19,3 +19,15 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - fetch_cyq_chips uses positional ts_code (not keyword-only) per PRD spec
   - No mypy/pyright available — typecheck verified via Python import + ast.parse
 ---
+
+## 2026-03-05 - US-002
+- Created 4 MongoDB data layer modules: mongo_ccass_hold.py, mongo_hk_hold.py, mongo_stk_surv.py, mongo_moneyflow_hsgt.py
+- Each module: create_indexes(), upsert_batch(), query functions
+- Files changed: backend/app/data/mongo_ccass_hold.py, mongo_hk_hold.py, mongo_stk_surv.py, mongo_moneyflow_hsgt.py
+- **Learnings for future iterations:**
+  - Pattern: _INDEX_READY global flag + _get_collection() lazy init
+  - upsert_batch returns result.upserted_count (not len(ops))
+  - mongo_hk_hold upsert key is (ts_code, trade_date, exchange) - 3-field composite
+  - mongo_stk_surv date field is surv_date (not trade_date) for indexes and queries
+  - mongo_moneyflow_hsgt has unique index on trade_date
+---

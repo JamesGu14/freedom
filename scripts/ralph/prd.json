@@ -39,7 +39,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "参考 backend/app/data/mongo_shenwan_daily.py 的写法。get_collection 来自 app.data.mongo。"
     },
     {
