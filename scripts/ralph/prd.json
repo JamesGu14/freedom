@@ -152,7 +152,7 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "stk_surv每次最多100条，需要分页。此脚本每周五在daily.sh中自动调用（拉最近7天），也支持手动指定日期范围做历史补录。"
     },
     {

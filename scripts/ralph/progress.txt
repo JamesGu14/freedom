@@ -96,3 +96,19 @@ Started: 2026年 03月 05日 星期四 16:27:57 CST
   - mark_sync_done called once per day after all 3 exchanges merged and upserted
   - Sleep distributed across 3 sub-calls to maintain API rate limits
 ---
+
+## 2026-03-05 - US-008
+- Created backend/scripts/daily/sync_stk_surv.py
+- Paginates in 7-day sliding window chunks (stk_surv max 100 records/call)
+- Calls fetch_stk_surv(start_date=chunk_start, end_date=chunk_end) per chunk
+- Warns if any chunk returns exactly 100 rows (possible truncation)
+- Writes to MongoDB via mongo_stk_surv.upsert_batch()
+- Fields: ts_code, name, surv_date, fund_visitors, rece_place, rece_mode, rece_org, org_type, comp_rece
+- Calls mark_sync_done(end_date, 'sync_stk_surv') once at end
+- Files changed: backend/scripts/daily/sync_stk_surv.py
+- **Learnings for future iterations:**
+  - stk_surv uses date-range chunking (7-day windows) like moneyflow_hsgt, not per-day trading-day loop
+  - dedup key is (ts_code, surv_date, rece_org) matching mongo_stk_surv upsert key
+  - surv_date needs dash stripping (YYYY-MM-DD → YYYYMMDD) in transform_df
+  - mark_sync_done called once at end (not per-chunk), same as moneyflow_hsgt pattern
+---
