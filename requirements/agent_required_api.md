@@ -187,6 +187,95 @@
 
 ---
 
+#### `POST /stocks/daily/stats/screen`
+
+按交易日区间对全 A 股或指定股票池做批量日线行为统计，并直接返回满足条件的股票列表。
+
+**Request Body**
+
+| 字段 | 类型 | 必填 | 说明 |
+|-----|------|-----|------|
+| `start_date` | string | 否 | 开始日期，支持 `YYYYMMDD` / `YYYY-MM-DD` |
+| `end_date` | string | 否 | 结束日期；不传时默认最新交易日 |
+| `lookback_days` | int | 否 | 最近 N 个交易日；若同时传 `start_date/end_date`，则忽略 |
+| `universe` | string | 否 | 股票池：`all_a` / `main_board` / `chi_next` / `star`，默认 `all_a` |
+| `ts_codes` | string[] | 否 | 指定股票列表；若传入，则优先作为基础集合 |
+| `industry_source` | string | 否 | 行业来源：`sw` / `citic` |
+| `industry_codes` | string[] | 否 | 行业代码列表；在基础股票池上继续过滤 |
+| `up_days_gte` | int | 否 | 上涨天数下限 |
+| `pct_change_gte` | float | 否 | 区间总涨跌幅下限（%） |
+| `max_up_streak_gte` | int | 否 | 最大连续上涨天数下限 |
+| `avg_amount_gte` | float | 否 | 区间日均成交额下限 |
+| `exclude_st` | bool | 否 | 是否排除 `ST/*ST` |
+| `exclude_suspended` | bool | 否 | 是否排除区间内有效交易日不足的股票 |
+| `sort_by` | string | 否 | 排序字段：`up_days` / `pct_change` / `max_up_streak` / `avg_amount` |
+| `sort_order` | string | 否 | 排序方向：`asc` / `desc` |
+| `page` | int | 否 | 页码，默认 `1` |
+| `page_size` | int | 否 | 每页条数，默认 `100` |
+
+**统计口径**
+
+- `trade_days`：区间内有效交易日数
+- `up_days`：`close > pre_close` 的天数
+- `down_days`：`close < pre_close` 的天数
+- `flat_days`：`close == pre_close` 的天数
+- `pct_change`：`(最后一个交易日 close / 第一个交易日 pre_close - 1) * 100`
+- `max_up_streak`：区间内最大连续上涨天数
+- `max_down_streak`：区间内最大连续下跌天数
+- `avg_amount`：区间内日均成交额
+- `latest_close`：区间最后一个交易日收盘价
+- `latest_pct_chg`：区间最后一个交易日涨跌幅，优先使用原始 `pct_chg`，缺失时回退 `(close - pre_close) / pre_close * 100`
+
+**示例请求**
+```json
+{
+  "lookback_days": 10,
+  "universe": "all_a",
+  "up_days_gte": 8,
+  "exclude_st": true,
+  "exclude_suspended": true,
+  "sort_by": "up_days",
+  "sort_order": "desc",
+  "page": 1,
+  "page_size": 100
+}
+```
+
+**示例响应**
+```json
+{
+  "code": 200,
+  "data": [
+    {
+      "ts_code": "000001.SZ",
+      "name": "平安银行",
+      "start_date": "20260220",
+      "end_date": "20260306",
+      "trade_days": 10,
+      "up_days": 8,
+      "down_days": 2,
+      "flat_days": 0,
+      "pct_change": 7.35,
+      "max_up_streak": 4,
+      "max_down_streak": 1,
+      "avg_amount": 1234567890.12,
+      "latest_close": 12.34,
+      "latest_pct_chg": 1.52
+    }
+  ],
+  "total": 123,
+  "page": 1,
+  "page_size": 100
+}
+```
+
+**Response**: 返回已聚合好的统计结果，不返回原始 K 线明细。
+
+**使用 Skills**: quant-factor-screener, china-stock-analysis
+**优先级**: P0
+
+---
+
 ### A3. 日度估值与基本面指标
 
 #### `GET /stocks/{ts_code}/daily-basic`
@@ -929,6 +1018,7 @@
 | `GET /stocks/basic` | MongoDB `stock_basic` | 全部 |
 | `GET /stocks/{ts_code}/daily` | Parquet `daily/` | quant-factor-screener, china-stock-analysis |
 | `GET /stocks/daily/snapshot` | Parquet `daily/` | quant-factor-screener |
+| `POST /stocks/daily/stats/screen` | Parquet `daily/` + MongoDB `stock_basic/trade_calendar` | quant-factor-screener, china-stock-analysis |
 | `GET /stocks/daily-basic/snapshot` | Parquet `daily_basic/` | undervalued-screener, high-dividend, small-cap |
 | `GET /industry/shenwan/members` | MongoDB `shenwan_industry_member` | quant-factor-screener |
 | `GET /industry/shenwan/daily/ranking` | MongoDB `shenwan_daily` | sector-rotation, quant-factor |
@@ -968,6 +1058,7 @@
 |---------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | `/stocks/basic` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `/stocks/{ts}/daily` | ✅ | — | ✅ | — | — | — | — | — | — |
+| `/stocks/daily/stats/screen` | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — |
 | `/stocks/daily-basic/snapshot` | ✅ | — | ✅ | — | ✅ | ✅ | — | ✅ | — |
 | `/industry/shenwan/members` | ✅ | ✅ | ✅ | — | — | — | — | — | — |
 | `/industry/shenwan/daily/ranking` | ✅ | ✅ | — | — | — | — | — | — | — |

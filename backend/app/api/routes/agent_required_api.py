@@ -29,6 +29,8 @@ from app.services.indicator_fields_service import (
     list_indicator_fields,
     normalize_requested_indicators,
 )
+from app.schemas.stock_daily_stats import StockDailyStatsScreenRequest
+from app.services.stock_daily_stats_service import screen_stock_daily_stats
 
 router = APIRouter()
 
@@ -451,6 +453,15 @@ def daily_snapshot(
         rows = _apply_fields(rows, fields=fields, always_keep={"ts_code", "trade_date"})
         paged, total = _paginate(rows, page=page, page_size=page_size)
         return _ok(paged, total=total, trade_date=date_value, page=page, page_size=page_size)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/stocks/daily/stats/screen")
+def stock_daily_stats_screen(payload: StockDailyStatsScreenRequest) -> dict[str, Any]:
+    try:
+        result = screen_stock_daily_stats(payload)
+        return _ok(result.data, total=result.total, page=result.page, page_size=result.page_size)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -30,7 +30,7 @@
 
 ---
 
-## 2. 已实现接口清单（42个）
+## 2. 已实现接口清单（43个）
 
 ### 2.1 股票基础与行情
 
@@ -60,6 +60,11 @@
 7. `GET /stocks/daily/snapshot`
 - 参数：`trade_date(默认最新)` `ts_codes` `fields` `page` `page_size`
 - 返回：全市场（或指定股票）当日行情快照
+
+7A. `POST /stocks/daily/stats/screen`
+- Body：`start_date end_date lookback_days universe ts_codes[] industry_source industry_codes[] up_days_gte pct_change_gte max_up_streak_gte avg_amount_gte exclude_st exclude_suspended sort_by sort_order page page_size`
+- 返回关键字段：`ts_code name start_date end_date trade_days up_days down_days flat_days pct_change max_up_streak max_down_streak avg_amount latest_close latest_pct_chg`
+- 口径：`pct_change = (最后一个交易日 close / 第一个交易日 pre_close - 1) * 100`；`max_up_streak` 为区间内最大连续上涨天数
 
 8. `GET /stocks/{ts_code}/daily-basic`
 - 参数：`start_date` `end_date` `fields`
@@ -179,7 +184,7 @@
 42. `GET /stocks/{ts_code}/events/holder-changes`
 - 数据集合：`corporate_events`（按 `event_type` 区分）
 
-> 说明：共 42 个可用接口，其中 41 个在 `agent_required_api.py`，`/market-index/factors` 复用并增强了既有路由。
+> 说明：共 43 个可用接口，其中 42 个在 `agent_required_api.py`，`/market-index/factors` 复用并增强了既有路由。
 
 ---
 
@@ -188,6 +193,7 @@
 - 优先用这些高频接口做主流程：
   - `/stocks/basic`
   - `/stocks/daily/snapshot`
+  - `/stocks/daily/stats/screen`
   - `/stocks/daily-basic/snapshot`
   - `/industry/shenwan/members`
   - `/industry/shenwan/daily/ranking`
