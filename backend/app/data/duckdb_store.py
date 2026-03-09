@@ -1,29 +1,147 @@
 from __future__ import annotations
 
+import logging
+import threading
+import time
 import duckdb
 import pandas as pd
 import uuid
-import time
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
-def get_connection(*, read_only: bool = False, retries: int = 20, delay: float = 0.5) -> duckdb.DuckDBPyConnection:
-    """Open DuckDB connection with retry to mitigate writer lock contention."""
+
+def _is_lock_conflict(exc: duckdb.IOException) -> bool:
+    text = str(exc)
+    return "Could not set lock on file" in text or "Conflicting lock is held" in text
+
+
+def _open_connection(*, read_only: bool, retries: int, delay: float) -> duckdb.DuckDBPyConnection:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     for attempt in range(retries):
         try:
             return duckdb.connect(str(settings.duckdb_path), read_only=read_only)
         except duckdb.IOException as exc:
-            # Handle file lock contention from concurrent writer (e.g., scheduler)
-            text = str(exc)
-            lock_conflict = "Could not set lock on file" in text or "Conflicting lock is held" in text
-            if lock_conflict and attempt < retries - 1:
-                # Exponential backoff with an upper bound to avoid hot-loop lock storm
+            if _is_lock_conflict(exc) and attempt < retries - 1:
                 wait_seconds = min(delay * (2 ** attempt), 10.0)
                 time.sleep(wait_seconds)
                 continue
             raise
+
+
+def _is_recoverable_read_error(exc: Exception) -> bool:
+    recoverable_types = (
+        duckdb.ConnectionException,
+        duckdb.FatalException,
+        duckdb.IOException,
+        duckdb.InternalException,
+        duckdb.OperationalError,
+    )
+    return isinstance(exc, recoverable_types)
+
+
+class _ReadOnlyConnectionProxy:
+    def __init__(self, manager: "_SharedReadConnectionManager", retries: int, delay: float) -> None:
+        self._manager = manager
+        self._retries = retries
+        self._delay = delay
+
+    def __enter__(self) -> "_ReadOnlyConnectionProxy":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def execute(self, query: str, parameters: object | None = None):
+        cursor, generation = self._manager.get_cursor(retries=self._retries, delay=self._delay)
+        try:
+            if parameters is None:
+                return cursor.execute(query)
+            return cursor.execute(query, parameters)
+        except Exception as exc:
+            if not _is_recoverable_read_error(exc):
+                raise
+            logger.warning("DuckDB read cursor failed; recreating shared read connection: %s", exc)
+            self._manager.reconnect(
+                retries=self._retries,
+                delay=self._delay,
+                expected_generation=generation,
+            )
+            cursor, _ = self._manager.get_cursor(retries=self._retries, delay=self._delay)
+            if parameters is None:
+                return cursor.execute(query)
+            return cursor.execute(query, parameters)
+
+    def __getattr__(self, name: str):
+        cursor, _ = self._manager.get_cursor(retries=self._retries, delay=self._delay)
+        return getattr(cursor, name)
+
+
+class _SharedReadConnectionManager:
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._thread_local = threading.local()
+        self._base_connection: duckdb.DuckDBPyConnection | None = None
+        self._generation = 0
+
+    def get_proxy(self, *, retries: int, delay: float) -> _ReadOnlyConnectionProxy:
+        return _ReadOnlyConnectionProxy(self, retries, delay)
+
+    def get_cursor(self, *, retries: int, delay: float) -> tuple[duckdb.DuckDBPyConnection, int]:
+        with self._lock:
+            base_connection = self._ensure_base_connection_locked(retries=retries, delay=delay)
+            state_generation = getattr(self._thread_local, "generation", -1)
+            cursor = getattr(self._thread_local, "cursor", None)
+            if cursor is None or state_generation != self._generation:
+                cursor = base_connection.cursor()
+                self._thread_local.cursor = cursor
+                self._thread_local.generation = self._generation
+            return cursor, self._generation
+
+    def reconnect(self, *, retries: int, delay: float, expected_generation: int | None = None) -> None:
+        with self._lock:
+            if expected_generation is not None and expected_generation != self._generation:
+                return
+            self._close_base_connection_locked()
+            self._ensure_base_connection_locked(retries=retries, delay=delay)
+
+    def close(self) -> None:
+        with self._lock:
+            self._close_base_connection_locked()
+        self._thread_local.cursor = None
+        self._thread_local.generation = -1
+
+    def _ensure_base_connection_locked(self, *, retries: int, delay: float) -> duckdb.DuckDBPyConnection:
+        if self._base_connection is None:
+            self._base_connection = _open_connection(read_only=True, retries=retries, delay=delay)
+            self._generation += 1
+        return self._base_connection
+
+    def _close_base_connection_locked(self) -> None:
+        connection = self._base_connection
+        self._base_connection = None
+        self._generation += 1
+        if connection is None:
+            return
+        try:
+            connection.close()
+        except Exception:  # pragma: no cover - defensive cleanup
+            logger.debug("Failed to close shared DuckDB read connection cleanly", exc_info=True)
+
+
+_READ_CONNECTION_MANAGER = _SharedReadConnectionManager()
+
+
+def get_connection(*, read_only: bool = False, retries: int = 20, delay: float = 0.5) -> duckdb.DuckDBPyConnection:
+    """Open DuckDB connection with retry to mitigate writer lock contention."""
+    if read_only:
+        return _READ_CONNECTION_MANAGER.get_proxy(retries=retries, delay=delay)
+    return _open_connection(read_only=False, retries=retries, delay=delay)
+
+
+def close_read_connection() -> None:
+    _READ_CONNECTION_MANAGER.close()
 
 
 def upsert_daily(df: pd.DataFrame) -> int:
@@ -140,19 +258,30 @@ def has_stock_data(ts_code: str) -> bool:
             return False
 
 
-def list_daily(ts_code: str) -> list[dict[str, object]]:
+def list_daily(ts_code: str, limit: int | None = None) -> list[dict[str, object]]:
     daily_root = settings.data_dir / "raw" / "daily" / f"ts_code={ts_code}"
     if not daily_root.exists():
         return []
 
     part_glob = str(daily_root / "year=*/part-*.parquet")
-    query = (
-        "SELECT ts_code, trade_date, open, high, low, close, vol, amount "
-        "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
-    )
+    if limit is not None and limit > 0:
+        query = (
+            "SELECT ts_code, trade_date, open, high, low, close, vol, amount "
+            "FROM ("
+            "  SELECT ts_code, trade_date, open, high, low, close, vol, amount "
+            "  FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date DESC LIMIT ?"
+            ") ORDER BY trade_date"
+        )
+        params = [part_glob, ts_code, limit]
+    else:
+        query = (
+            "SELECT ts_code, trade_date, open, high, low, close, vol, amount "
+            "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
+        )
+        params = [part_glob, ts_code]
     with get_connection(read_only=True) as con:
         try:
-            rows = con.execute(query, [part_glob, ts_code]).fetchdf()
+            rows = con.execute(query, params).fetchdf()
         except duckdb.CatalogException:
             return []
     return rows.to_dict(orient="records")
@@ -196,33 +325,54 @@ def list_stk_limit(ts_code: str) -> list[dict[str, object]]:
     return rows.to_dict(orient="records")
 
 
-def list_adj_factor(ts_code: str) -> list[dict[str, object]]:
-    query = (
-        "SELECT ts_code, trade_date, adj_factor "
-        "FROM adj_factor WHERE ts_code = ? ORDER BY trade_date"
-    )
+def list_adj_factor(ts_code: str, limit: int | None = None) -> list[dict[str, object]]:
+    if limit is not None and limit > 0:
+        query = (
+            "SELECT ts_code, trade_date, adj_factor "
+            "FROM ("
+            "  SELECT ts_code, trade_date, adj_factor "
+            "  FROM adj_factor WHERE ts_code = ? ORDER BY trade_date DESC LIMIT ?"
+            ") ORDER BY trade_date"
+        )
+        params = [ts_code, limit]
+    else:
+        query = (
+            "SELECT ts_code, trade_date, adj_factor "
+            "FROM adj_factor WHERE ts_code = ? ORDER BY trade_date"
+        )
+        params = [ts_code]
     with get_connection(read_only=True) as con:
         try:
-            rows = con.execute(query, [ts_code]).fetchdf()
+            rows = con.execute(query, params).fetchdf()
         except duckdb.CatalogException:
             return []
     return rows.to_dict(orient="records")
 
 
-def list_indicators(ts_code: str) -> list[dict[str, object]]:
+def list_indicators(ts_code: str, limit: int | None = None) -> list[dict[str, object]]:
     """Get technical indicators for a stock."""
     indicators_root = settings.data_dir / "features" / "indicators" / f"ts_code={ts_code}"
     if not indicators_root.exists():
         return []
 
     part_glob = str(indicators_root / "year=*/part-*.parquet")
-    query = (
-        "SELECT * FROM read_parquet(?, union_by_name = true) "
-        "WHERE ts_code = ? ORDER BY trade_date"
-    )
+    if limit is not None and limit > 0:
+        query = (
+            "SELECT * FROM ("
+            "  SELECT * FROM read_parquet(?, union_by_name = true) "
+            "  WHERE ts_code = ? ORDER BY trade_date DESC LIMIT ?"
+            ") ORDER BY trade_date"
+        )
+        params = [part_glob, ts_code, limit]
+    else:
+        query = (
+            "SELECT * FROM read_parquet(?, union_by_name = true) "
+            "WHERE ts_code = ? ORDER BY trade_date"
+        )
+        params = [part_glob, ts_code]
     with get_connection(read_only=True) as con:
         try:
-            rows = con.execute(query, [part_glob, ts_code]).fetchdf()
+            rows = con.execute(query, params).fetchdf()
         except duckdb.CatalogException:
             return []
     return rows.to_dict(orient="records")
@@ -480,4 +630,3 @@ def get_next_trade_date(ts_codes: list[str], trade_date: str) -> str | None:
     if not row:
         return None
     return row[0] or None
-

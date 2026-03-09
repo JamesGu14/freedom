@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="/home/james/projects/freedom"
 LOG_DIR="${ROOT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
+export PYTHONPATH="${ROOT_DIR}/backend${PYTHONPATH:+:${PYTHONPATH}}"
 
 # Parse command line arguments
 START_DATE=""

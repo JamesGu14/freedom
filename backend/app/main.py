@@ -5,11 +5,13 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from app.api.routers import router as api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.data.duckdb_store import close_read_connection
 from app.data.mongo_stock import ensure_stock_basic_indexes
 from app.data.mongo_data_sync_job_run import ensure_data_sync_job_run_indexes
 from app.data.mongo_strategy_job_run import ensure_strategy_job_run_indexes
 from app.data.mongo_strategy_signal import ensure_strategy_signal_indexes
 from app.data.mongo_agent_freedom import ensure_agent_freedom_indexes
+from app.data.redis_client import close_redis_client
 
 
 def create_app() -> FastAPI:
@@ -62,6 +64,11 @@ def create_app() -> FastAPI:
 
         ensure_data_sync_date_indexes()
         ensure_admin_user(settings.admin_username, settings.admin_password)
+
+    @application.on_event("shutdown")
+    def _shutdown() -> None:
+        close_read_connection()
+        close_redis_client()
 
     return application
 

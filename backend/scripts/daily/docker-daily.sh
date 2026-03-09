@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="/app"
 LOG_DIR="${ROOT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
+export PYTHONPATH="${ROOT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 # Parse command line arguments
 START_DATE=""
@@ -166,4 +167,3 @@ else
 fi
 
 echo "[INFO] $(date '+%F %T') done" | tee -a "${LOG_FILE}"
-

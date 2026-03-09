@@ -13,6 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = SCRIPT_ROOT.parent
 sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings  # noqa: E402
@@ -21,6 +22,7 @@ from app.data.mongo_market_index import DEFAULT_MARKET_INDEX_CODES  # noqa: E402
 from app.data.tushare_client import fetch_idx_factor_pro  # noqa: E402
 
 logger = logging.getLogger(__name__)
+DAILY_QUOTA_ERROR_TEXT = "每天最多访问该接口5000次"
 
 OUTPUT_COLUMNS = [
     "ts_code",
@@ -61,6 +63,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-date", type=str, default="", help="Start date: YYYYMMDD")
     parser.add_argument("--end-date", type=str, default="", help="End date: YYYYMMDD")
     parser.add_argument("--last-days", type=int, default=0, help="Pull most recent N calendar days")
+    parser.add_argument("--ts-codes", type=str, default="", help="Comma-separated ts_code list")
+    parser.add_argument("--ts-codes-file", type=str, default="", help="Text file with one ts_code per line")
     parser.add_argument("--sleep", type=float, default=2.0, help="Sleep seconds between API calls")
     return parser.parse_args()
 
@@ -122,6 +126,52 @@ def get_index_list() -> list[str]:
         logger.warning("Failed to load citic_industry index_codes: %s", exc)
 
     return sorted(codes)
+
+
+def read_ts_codes_from_file(file_path: str) -> list[str]:
+    path = Path(file_path).expanduser()
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"ts_code file not found: {path}")
+
+    codes: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        codes.append(text)
+    return codes
+
+
+def resolve_index_list(ts_codes_arg: str, ts_codes_file: str) -> list[str]:
+    explicit_codes: list[str] = []
+    if ts_codes_arg:
+        explicit_codes.extend(code.strip() for code in ts_codes_arg.split(",") if code.strip())
+    if ts_codes_file:
+        explicit_codes.extend(read_ts_codes_from_file(ts_codes_file))
+
+    if explicit_codes:
+        return sorted(dict.fromkeys(explicit_codes))
+
+    return get_index_list()
+
+
+def is_daily_quota_error(exc: Exception) -> bool:
+    return DAILY_QUOTA_ERROR_TEXT in str(exc)
+
+
+def write_failed_codes(codes: list[str]) -> Path | None:
+    unique_codes = list(dict.fromkeys(code for code in codes if code))
+    if not unique_codes:
+        return None
+
+    logs_dir = PROJECT_ROOT / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = logs_dir / f"idx_factor_pro_failed_{timestamp}.txt"
+    output_path.write_text("\n".join(unique_codes) + "\n", encoding="utf-8")
+    return output_path
 
 
 def partition_exists(ts_code: str, year: str) -> bool:
@@ -209,6 +259,9 @@ def sync_index(ts_code: str, start_date: str, end_date: str, sleep_sec: float) -
         return {"status": "success", "rows": saved}
 
     except Exception as e:
+        if is_daily_quota_error(e):
+            logger.error("Daily quota exhausted at %s: %s", ts_code, e)
+            return {"status": "quota_exceeded", "rows": 0, "reason": str(e)}
         logger.error("Failed to sync %s: %s", ts_code, e)
         return {"status": "error", "rows": 0}
 
@@ -218,16 +271,19 @@ def main() -> None:
 
     args = parse_args()
     start_date, end_date = resolve_dates(args)
-    index_list = get_index_list()
+    index_list = resolve_index_list(args.ts_codes, args.ts_codes_file)
 
     logger.info("Processing %d indices from %s to %s", len(index_list), start_date, end_date)
 
     total_saved = 0
     success_count = 0
     error_count = 0
+    failed_codes: list[str] = []
+    quota_hit = False
+    quota_reason = ""
 
     with tqdm(index_list, desc="Syncing idx_factor_pro") as pbar:
-        for ts_code in pbar:
+        for idx, ts_code in enumerate(pbar):
             result = sync_index(ts_code, start_date, end_date, args.sleep)
 
             if result["status"] == "success":
@@ -235,11 +291,30 @@ def main() -> None:
                 total_saved += result["rows"]
             elif result["status"] == "error":
                 error_count += 1
+                failed_codes.append(ts_code)
+            elif result["status"] == "quota_exceeded":
+                quota_hit = True
+                quota_reason = result.get("reason", "")
+                remaining_codes = index_list[idx:]
+                failed_codes.extend(remaining_codes)
+                error_count += 1
 
             pbar.set_postfix(code=ts_code, rows=result["rows"], ok=success_count, err=error_count)
+            if quota_hit:
+                logger.warning(
+                    "Stopping early after daily quota exhaustion. Current code: %s, remaining pending codes: %d",
+                    ts_code,
+                    len(index_list) - idx,
+                )
+                break
             time.sleep(args.sleep)
 
     logger.info("Completed: %d success, %d errors, %d rows saved", success_count, error_count, total_saved)
+    failed_path = write_failed_codes(failed_codes)
+    if failed_path is not None:
+        logger.warning("Failed or pending codes saved to: %s", failed_path)
+    if quota_hit and quota_reason:
+        logger.warning("Stopped because daily quota was exhausted: %s", quota_reason)
 
 
 if __name__ == "__main__":

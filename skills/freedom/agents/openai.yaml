@@ -1,0 +1,4 @@
+interface:
+  display_name: "Freedom"
+  short_description: "Operate the Freedom market data workflows"
+  default_prompt: "Use $freedom to work with the Freedom market data API and workflows."
