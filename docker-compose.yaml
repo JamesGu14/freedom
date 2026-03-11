@@ -24,22 +24,26 @@ services:
       TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       DATA_DIR: /data
       DUCKDB_PATH: /data/quant.duckdb
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://shared-redis:6379/1
       MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
       ACCESS_TOKEN_EXPIRES_MINUTES: 2880
       AI_RUNNER_BASE_URL: ${AI_RUNNER_BASE_URL:-http://host.docker.internal:18600}
       AI_RUNNER_TOKEN: ${AI_RUNNER_TOKEN:-}
       AI_RUNNER_TIMEOUT_SECONDS: ${AI_RUNNER_TIMEOUT_SECONDS:-90}
       AI_RUNNER_MAX_RETRIES: ${AI_RUNNER_MAX_RETRIES:-2}
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      AUTH_LOGIN_URL: ${AUTH_LOGIN_URL:-http://personal-authenticator-app:3900/v1/auth/login}
+      AUTH_VERIFY_URL: ${AUTH_VERIFY_URL:-http://personal-authenticator-app:3900/v1/internal/verify}
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
     depends_on:
-      - redis
       - mongodb
+    networks:
+      default:
+      proxy:
+      shared-infra:
 
   scheduler:
     build:
@@ -50,22 +54,26 @@ services:
       TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       DATA_DIR: /data
       DUCKDB_PATH: /data/quant.duckdb
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://shared-redis:6379/1
       MONGODB_URL: mongodb://james:2x%23fdksma%21@mongodb:27017/?authSource=admin
       ACCESS_TOKEN_EXPIRES_MINUTES: 2880
       AI_RUNNER_BASE_URL: ${AI_RUNNER_BASE_URL:-http://host.docker.internal:18600}
       AI_RUNNER_TOKEN: ${AI_RUNNER_TOKEN:-}
       AI_RUNNER_TIMEOUT_SECONDS: ${AI_RUNNER_TIMEOUT_SECONDS:-90}
       AI_RUNNER_MAX_RETRIES: ${AI_RUNNER_MAX_RETRIES:-2}
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      AUTH_LOGIN_URL: ${AUTH_LOGIN_URL:-http://personal-authenticator-app:3900/v1/auth/login}
+      AUTH_VERIFY_URL: ${AUTH_VERIFY_URL:-http://personal-authenticator-app:3900/v1/internal/verify}
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
     depends_on:
-      - redis
       - mongodb
+    networks:
+      default:
+      proxy:
+      shared-infra:
 
   frontend:
     build:
@@ -79,6 +87,7 @@ services:
 
   postgres:
     image: postgres:15-alpine
+    profiles: ["legacy-airflow"]
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -88,6 +97,7 @@ services:
 
   airflow-init:
     image: apache/airflow:2.9.3
+    profiles: ["legacy-airflow"]
     depends_on:
       - postgres
     environment:
@@ -106,6 +116,7 @@ services:
 
   airflow-webserver:
     image: apache/airflow:2.9.3
+    profiles: ["legacy-airflow"]
     depends_on:
       - postgres
       - airflow-init
@@ -118,8 +129,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-change-me}
       FREEDOM_BACKEND_API_BASE: http://backend:9000/api
-      FREEDOM_ADMIN_USERNAME: ${ADMIN_USERNAME:-james}
-      FREEDOM_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-james1031}
+      FREEDOM_API_KEY: ${FREEDOM_API_KEY:-}
     command: webserver
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
@@ -128,6 +138,7 @@ services:
 
   airflow-scheduler:
     image: apache/airflow:2.9.3
+    profiles: ["legacy-airflow"]
     depends_on:
       - postgres
       - airflow-init
@@ -137,8 +148,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       FREEDOM_BACKEND_API_BASE: http://backend:9000/api
-      FREEDOM_ADMIN_USERNAME: ${ADMIN_USERNAME:-james}
-      FREEDOM_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-james1031}
+      FREEDOM_API_KEY: ${FREEDOM_API_KEY:-}
     command: scheduler
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
@@ -147,6 +157,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    profiles: ["legacy-local-state"]
     ports:
       - "6379:6379"
     volumes:
@@ -178,4 +189,6 @@ volumes:
 
 networks:
   proxy:
+    external: true
+  shared-infra:
     external: true
