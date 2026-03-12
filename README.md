@@ -30,6 +30,23 @@
 - **前端**：Next.js + ECharts
 - **可观测性（建议）**：结构化日志 + 基础指标（后续可接 Prometheus/Grafana）
 
+## 2.1 统一认证与浏览器会话
+
+`freedom` 现在继续对外保留自己的认证入口，但所有浏览器 token 生命周期都委托给 `personal-authenticator`：
+
+- `POST /api/auth/login` 代理统一认证登录，返回 `access_token`、`refresh_token`、`token_type`
+- `POST /api/auth/refresh` 接受 JSON `{ "refresh_token": "..." }`，代理统一认证刷新，并返回新的 token pair
+- `POST /api/auth/logout` 接受当前 refresh token，代理统一认证撤销当前浏览器会话
+
+前端行为：
+
+- 本地同时保存 access token 和 refresh token
+- 业务请求收到 `401` 时，前端只发起一个进行中的 refresh 请求
+- refresh 成功后自动重试原请求
+- refresh 失败或浏览器仍持有旧的 access-token-only 会话时，前端清理本地会话并跳转 `/freedom/login`
+
+业务 API 与内部自动化仍然只接受 access token 或 API Key；refresh token 不能作为业务 Bearer token 使用。
+
 ---
 
 ## 2.1 MongoDB 集合
@@ -438,7 +455,18 @@ TUSHARE_TOKEN=...
 DATA_DIR=./data
 DUCKDB_PATH=./data/quant.duckdb
 REDIS_URL=redis://localhost:6379/0（可选）
+AUTH_LOGIN_URL=http://127.0.0.1:13900/v1/auth/login
+AUTH_VERIFY_URL=http://127.0.0.1:13900/v1/internal/verify
+SHARED_BUSINESS_USERNAME=james
+FREEDOM_API_KEY=...   # Airflow / 自动化调用使用，来自 personal-authenticator
 ```
+
+认证说明：
+
+- `/auth/login` 现在只代理 `personal-authenticator`，Freedom 不再校验本地密码。
+- 前端只保存 `access_token`，不再使用 refresh cookie；任一 API 返回 `401` 时会清理本地会话并跳回 `/freedom/login`。
+- Freedom 当前继续复用共享业务主体 `james`；统一身份只负责认证，不改变现有业务数据归属。
+- Airflow 和其他自动化调用必须使用归属于 `james` 的 `personal-authenticator` API Key 访问 Freedom 业务接口。
 
 ### 10.2 启动顺序
 

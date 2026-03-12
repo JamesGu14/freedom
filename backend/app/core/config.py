@@ -27,9 +27,15 @@ class Settings(BaseSettings):
     access_token_expires_minutes: int = 120
     refresh_token_expires_days: int = 7
     internal_api_token: str = ""
+    auth_login_url: str = ""
+    auth_refresh_url: str = ""
+    auth_logout_url: str = ""
+    auth_verify_url: str = ""
+    auth_verify_timeout_seconds: float = 5.0
     auth_cookie_domain: str | None = None
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
+    shared_business_username: str = "james"
 
     admin_username: str = "james"
     admin_password: str = "james1031"
