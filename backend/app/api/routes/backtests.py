@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.stock_code import resolve_ts_code_input
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_shared_business_username
 from app.services.backtest_service import (
     compare_backtests,
     create_backtest_run_meta,
@@ -44,7 +44,7 @@ def create_backtest(
     payload: BacktestCreateRequest,
     current_user: dict[str, object] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    username = str(current_user.get("username") or "")
+    del current_user
     try:
         item = create_backtest_run_meta(
             strategy_id=payload.strategy_id,
@@ -53,7 +53,7 @@ def create_backtest(
             end_date=payload.end_date,
             run_type=payload.run_type,
             initial_capital=payload.initial_capital,
-            created_by=username,
+            created_by=get_shared_business_username(),
             run_id=payload.run_id,
         )
     except ValueError as exc:

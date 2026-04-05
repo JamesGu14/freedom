@@ -4,15 +4,12 @@ import { useAuth } from "../lib/auth";
 
 const STATUS_LABEL = {
   synced_all_required: "已同步",
-  partially_synced: "部分同步",
-  missing: "缺失",
+  partially_synced: "部分缺失",
+  missing: "未同步",
   non_trading: "非交易日",
-  running: "运行中",
-  pending: "排队中",
-  success: "成功",
-  failed: "失败",
-  cancelled: "已停止",
 };
+
+const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
 
 const toInputDate = (value) => {
   const text = String(value || "").replace(/-/g, "");
@@ -30,26 +27,8 @@ const formatYmd = (value) => {
 
 const parseInputDate = (value) => {
   if (!value) return null;
-  const text = String(value).trim();
-  if (!text) return null;
-  const d = new Date(`${text}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-};
-
-const diffDaysInclusive = (start, end) => {
-  const s = parseInputDate(start);
-  const e = parseInputDate(end);
-  if (!s || !e) return null;
-  const ms = e.getTime() - s.getTime();
-  return Math.floor(ms / (24 * 60 * 60 * 1000)) + 1;
-};
-
-const dateToYmd = (date) => {
-  const y = date.getFullYear();
-  const m = `${date.getMonth() + 1}`.padStart(2, "0");
-  const d = `${date.getDate()}`.padStart(2, "0");
-  return `${y}${m}${d}`;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const buildMonthCells = (year, monthIndex) => {
@@ -63,6 +42,13 @@ const buildMonthCells = (year, monthIndex) => {
   return cells;
 };
 
+const dateToYmd = (date) => {
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}${m}${d}`;
+};
+
 const statusClass = (status) => {
   if (status === "synced_all_required") return "sync-status sync-status--ok";
   if (status === "partially_synced") return "sync-status sync-status--partial";
@@ -71,31 +57,58 @@ const statusClass = (status) => {
   return "sync-status";
 };
 
+const badgeClass = (status) => {
+  if (status === "synced_all_required" || status === "synced") return "badge sync-badge sync-badge--ok";
+  if (status === "partially_synced") return "badge sync-badge sync-badge--partial";
+  if (status === "missing") return "badge sync-badge sync-badge--missing";
+  if (status === "non_trading") return "badge sync-badge sync-badge--nontrading";
+  return "badge";
+};
+
+const buildMonthPanels = (startDate, endDate) => {
+  const start = parseInputDate(startDate);
+  const end = parseInputDate(endDate);
+  if (!start || !end || start > end) return [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const last = new Date(end.getFullYear(), end.getMonth(), 1);
+  const panels = [];
+  while (cursor <= last) {
+    const year = cursor.getFullYear();
+    const monthIndex = cursor.getMonth();
+    const month = `${year}${`${monthIndex + 1}`.padStart(2, "0")}`;
+    panels.push({
+      month,
+      monthLabel: `${year}-${`${monthIndex + 1}`.padStart(2, "0")}`,
+      cells: buildMonthCells(year, monthIndex),
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return panels;
+};
+
 export default function DataSyncPage() {
-  const { username } = useAuth();
-  const isAdmin = ["admin", "james"].includes(String(username || "").trim().toLowerCase());
+  const { roles } = useAuth();
+  const isAdmin = Array.isArray(roles) && roles.some((role) => String(role).trim().toLowerCase() === "admin");
 
   const today = useMemo(() => {
     const now = new Date();
     return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")}`;
   }, []);
-  const defaultStart = today;
+
+  const defaultStart = useMemo(() => {
+    const now = new Date();
+    now.setMonth(now.getMonth() - 5);
+    return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")}`;
+  }, []);
 
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(today);
   const [calendar, setCalendar] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [missingItems, setMissingItems] = useState([]);
+  const [requiredTasks, setRequiredTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const [jobStartDate, setJobStartDate] = useState(defaultStart);
-  const [jobEndDate, setJobEndDate] = useState(today);
-  const [job, setJob] = useState(null);
-  const [jobId, setJobId] = useState("");
-  const [jobError, setJobError] = useState("");
-  const [logs, setLogs] = useState("");
-  const [logOffset, setLogOffset] = useState(0);
+  const [selectedItem, setSelectedItem] = useState(null);
 
   const calendarMap = useMemo(() => {
     const map = new Map();
@@ -105,30 +118,7 @@ export default function DataSyncPage() {
     return map;
   }, [calendar]);
 
-  const missingByMonth = useMemo(() => {
-    const map = new Map();
-    for (const item of missingItems) {
-      const key = String(item.trade_date || "").slice(0, 6);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(item);
-    }
-    return [...map.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-  }, [missingItems]);
-
-  const missingMonthPanels = useMemo(
-    () =>
-      missingByMonth.map(([month, items]) => {
-        const year = Number(month.slice(0, 4));
-        const monthIndex = Number(month.slice(4, 6)) - 1;
-        return {
-          month,
-          monthLabel: `${month.slice(0, 4)}-${month.slice(4, 6)}`,
-          cells: buildMonthCells(year, monthIndex),
-          items,
-        };
-      }),
-    [missingByMonth]
-  );
+  const monthPanels = useMemo(() => buildMonthPanels(startDate, endDate), [startDate, endDate]);
 
   const loadCalendar = async () => {
     setLoading(true);
@@ -137,115 +127,24 @@ export default function DataSyncPage() {
       const params = new URLSearchParams();
       params.set("start_date", fromInputDate(startDate));
       params.set("end_date", fromInputDate(endDate));
-
-      const [calendarRes, missingRes] = await Promise.all([
-        apiFetch(`/data-sync/calendar?${params.toString()}`),
-        apiFetch(`/data-sync/missing?${params.toString()}`),
-      ]);
-      if (!calendarRes.ok) {
-        const detail = await calendarRes.json().catch(() => ({}));
-        throw new Error(detail.detail || `加载失败: ${calendarRes.status}`);
+      const res = await apiFetch(`/data-sync/calendar?${params.toString()}`);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail || `加载失败: ${res.status}`);
       }
-      if (!missingRes.ok) {
-        const detail = await missingRes.json().catch(() => ({}));
-        throw new Error(detail.detail || `加载失败: ${missingRes.status}`);
-      }
-      const calendarData = await calendarRes.json();
-      const missingData = await missingRes.json();
-      setCalendar(calendarData.items || []);
-      setSummary(calendarData.summary || null);
-      setMissingItems(missingData.items || []);
+      const data = await res.json();
+      setCalendar(data.items || []);
+      setSummary(data.summary || null);
+      setRequiredTasks(data.required_tasks || []);
+      setSelectedItem(null);
     } catch (err) {
       setError(err.message || "加载失败");
       setCalendar([]);
       setSummary(null);
-      setMissingItems([]);
+      setRequiredTasks([]);
+      setSelectedItem(null);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadJob = async (nextJobId) => {
-    if (!nextJobId) return;
-    const res = await apiFetch(`/data-sync/jobs/${nextJobId}`);
-    if (!res.ok) {
-      const detail = await res.json().catch(() => ({}));
-      throw new Error(detail.detail || `任务加载失败: ${res.status}`);
-    }
-    const data = await res.json();
-    setJob(data);
-  };
-
-  const loadJobLogs = async (nextJobId, nextOffset) => {
-    if (!nextJobId) return;
-    const params = new URLSearchParams();
-    params.set("offset", String(nextOffset || 0));
-    const res = await apiFetch(`/data-sync/jobs/${nextJobId}/logs?${params.toString()}`);
-    if (!res.ok) {
-      const detail = await res.json().catch(() => ({}));
-      throw new Error(detail.detail || `日志加载失败: ${res.status}`);
-    }
-    const data = await res.json();
-    const chunk = String(data.content || "");
-    if (chunk) {
-      setLogs((prev) => prev + chunk);
-    }
-    setLogOffset(Number(data.next_offset || nextOffset || 0));
-  };
-
-  const createJob = async (event) => {
-    event.preventDefault();
-    setJobError("");
-    try {
-      const spanDays = diffDaysInclusive(jobStartDate, jobEndDate);
-      if (spanDays === null) {
-        throw new Error("请输入有效的开始和结束日期");
-      }
-      if (spanDays < 1) {
-        throw new Error("开始日期不能晚于结束日期");
-      }
-      if (spanDays > 5) {
-        throw new Error("执行同步任务最多只能选择 5 天范围");
-      }
-      const res = await apiFetch("/data-sync/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          start_date: fromInputDate(jobStartDate),
-          end_date: fromInputDate(jobEndDate),
-        }),
-      });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail || `创建任务失败: ${res.status}`);
-      }
-      const data = await res.json();
-      const nextJobId = String(data.job_id || "");
-      setJob(data);
-      setJobId(nextJobId);
-      setLogs("");
-      setLogOffset(0);
-      await loadJobLogs(nextJobId, 0);
-      await loadCalendar();
-    } catch (err) {
-      setJobError(err.message || "创建任务失败");
-    }
-  };
-
-  const stopJob = async () => {
-    if (!jobId) return;
-    setJobError("");
-    try {
-      const res = await apiFetch(`/data-sync/jobs/${jobId}/stop`, { method: "POST" });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail || `停止任务失败: ${res.status}`);
-      }
-      const data = await res.json();
-      setJob(data);
-      await loadJobLogs(jobId, logOffset);
-    } catch (err) {
-      setJobError(err.message || "停止任务失败");
     }
   };
 
@@ -255,29 +154,6 @@ export default function DataSyncPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
-  useEffect(() => {
-    if (!jobId) return;
-    const status = String(job?.status || "");
-    if (!["pending", "running"].includes(status)) return;
-
-    const timer = setInterval(async () => {
-      try {
-        await loadJob(jobId);
-        await loadJobLogs(jobId, logOffset);
-      } catch (err) {
-        setJobError(err.message || "任务轮询失败");
-      }
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [jobId, job?.status, logOffset]);
-
-  useEffect(() => {
-    const status = String(job?.status || "");
-    if (!jobId || !["success", "failed"].includes(status)) return;
-    loadCalendar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId, job?.status]);
-
   if (!isAdmin) {
     return (
       <main className="page">
@@ -285,7 +161,7 @@ export default function DataSyncPage() {
           <div>
             <p className="eyebrow">Admin</p>
             <h1>数据同步</h1>
-            <p className="subtitle">仅 admin/james 可访问</p>
+            <p className="subtitle">仅 admin 可访问</p>
           </div>
         </header>
         <section className="panel">
@@ -301,18 +177,18 @@ export default function DataSyncPage() {
         <div>
           <p className="eyebrow">Admin</p>
           <h1>数据同步</h1>
-          <p className="subtitle">交易日同步状态总览 + 手动执行 daily.sh</p>
+          <p className="subtitle">Airflow 每日同步状态总览，按接口检查每个交易日是否完整。</p>
         </div>
       </header>
 
-      <form className="filters" onSubmit={(e) => { e.preventDefault(); loadCalendar(); }}>
+      <form className="filters" onSubmit={(event) => { event.preventDefault(); loadCalendar(); }}>
         <label className="field">
           <span>开始日期</span>
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
         </label>
         <label className="field">
           <span>结束日期</span>
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
         </label>
         <button className="primary" type="submit" disabled={loading}>
           {loading ? "加载中..." : "刷新状态"}
@@ -325,50 +201,64 @@ export default function DataSyncPage() {
         <section className="sync-summary-grid">
           <div className="kpi-tile"><div className="kpi-tile__label">交易日</div><div className="kpi-tile__value">{summary.trading_days}</div></div>
           <div className="kpi-tile"><div className="kpi-tile__label">已同步</div><div className="kpi-tile__value">{summary.synced_all_required}</div></div>
-          <div className="kpi-tile"><div className="kpi-tile__label">部分同步</div><div className="kpi-tile__value">{summary.partially_synced}</div></div>
-          <div className="kpi-tile"><div className="kpi-tile__label">缺失</div><div className="kpi-tile__value">{summary.missing}</div></div>
+          <div className="kpi-tile"><div className="kpi-tile__label">部分缺失</div><div className="kpi-tile__value">{summary.partially_synced}</div></div>
+          <div className="kpi-tile"><div className="kpi-tile__label">未同步</div><div className="kpi-tile__value">{summary.missing}</div></div>
           <div className="kpi-tile"><div className="kpi-tile__label">非交易日</div><div className="kpi-tile__value">{summary.non_trading}</div></div>
         </section>
       ) : null}
 
       <section className="panel sync-legend">
-        <span className="badge sync-badge sync-badge--ok">已同步</span>
-        <span className="badge sync-badge sync-badge--partial">部分同步</span>
-        <span className="badge sync-badge sync-badge--missing">缺失</span>
-        <span className="badge sync-badge sync-badge--nontrading">非交易日</span>
+        <span className="badge sync-badge sync-badge--ok">绿色：完整</span>
+        <span className="badge sync-badge sync-badge--partial">黄色：有缺失</span>
+        <span className="badge sync-badge sync-badge--missing">红色：未同步</span>
+        <span className="badge sync-badge sync-badge--nontrading">灰色：非交易日</span>
       </section>
 
-      {missingMonthPanels.length > 0 ? (
+      {requiredTasks.length > 0 ? (
         <section className="panel">
-          <h2>缺失日期详情</h2>
+          <h2>每日检查接口</h2>
+          <div className="sync-task-chip-list">
+            {requiredTasks.map((task) => (
+              <span key={task.task} className="badge">{task.label}</span>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {monthPanels.length > 0 ? (
+        <section className="panel">
+          <h2>日历总览</h2>
+          <p className="subtitle">点击日期可以查看该日缺失了哪些接口数据。</p>
           <div className="sync-months">
-            {missingMonthPanels.map((panel) => (
+            {monthPanels.map((panel) => (
               <div key={panel.month} className="panel sync-month-panel">
                 <h3>{panel.monthLabel}</h3>
                 <div className="calendar-grid sync-calendar-grid">
-                  {["日", "一", "二", "三", "四", "五", "六"].map((w) => (
+                  {WEEKDAY_LABELS.map((w) => (
                     <div key={`${panel.monthLabel}-${w}`} className="calendar-weekday">{w}</div>
                   ))}
                   {panel.cells.map((cell, idx) => {
-                    if (!cell) return <div key={`${panel.monthLabel}-empty-${idx}`} className="calendar-cell calendar-empty" />;
+                    if (!cell) {
+                      return <div key={`${panel.monthLabel}-empty-${idx}`} className="calendar-cell calendar-empty" />;
+                    }
                     const ymd = dateToYmd(cell);
                     const item = calendarMap.get(ymd);
                     const title = item
-                      ? `${formatYmd(ymd)} ${STATUS_LABEL[item.status] || item.status}\n缺失任务: ${(item.missing_required_tasks || []).join(", ") || "-"}`
-                      : `${formatYmd(ymd)} 无数据`;
+                      ? `${formatYmd(ymd)} ${STATUS_LABEL[item.status] || item.status}`
+                      : `${formatYmd(ymd)} 无状态`;
                     return (
-                      <div key={`${panel.monthLabel}-${ymd}`} className={`calendar-cell ${statusClass(item?.status)}`} title={title}>
+                      <button
+                        key={`${panel.monthLabel}-${ymd}`}
+                        type="button"
+                        className={`calendar-cell sync-calendar-cell-button ${statusClass(item?.status)}`}
+                        title={title}
+                        onClick={() => item && setSelectedItem(item)}
+                        disabled={!item}
+                      >
                         <span className="sync-day">{cell.getDate()}</span>
-                      </div>
+                      </button>
                     );
                   })}
-                </div>
-                <div className="sync-missing-list">
-                  {panel.items.map((item) => (
-                    <span key={item.trade_date} className="badge sync-missing-item" title={`缺失任务: ${(item.missing_required_tasks || []).join(", ")}`}>
-                      {formatYmd(item.trade_date)}
-                    </span>
-                  ))}
                 </div>
               </div>
             ))}
@@ -376,47 +266,66 @@ export default function DataSyncPage() {
         </section>
       ) : null}
 
-      <section className="panel">
-        <h2>执行同步任务</h2>
-        <form className="filters" onSubmit={createJob}>
-          <label className="field">
-            <span>开始日期</span>
-            <input type="date" value={jobStartDate} onChange={(e) => setJobStartDate(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>结束日期</span>
-            <input type="date" value={jobEndDate} onChange={(e) => setJobEndDate(e.target.value)} />
-          </label>
-          <div className="sync-job-actions">
-            <button className="primary sync-job-btn" type="submit" disabled={job?.status === "running" || job?.status === "pending"}>
-              {job?.status === "running" || job?.status === "pending" ? "执行中..." : "执行 daily.sh"}
-            </button>
-            <button
-              className="primary sync-job-btn sync-job-btn--stop"
-              type="button"
-              onClick={stopJob}
-              disabled={!jobId || !["running", "pending"].includes(String(job?.status || ""))}
-            >
-              停止任务
-            </button>
-          </div>
-        </form>
-        {jobError ? <div className="error">{jobError}</div> : null}
-        {job ? (
-          <div className="sync-job-meta">
-            <span className="badge">Job: {job.job_id}</span>
-            <span className={`badge ${statusClass(job.status)}`}>{STATUS_LABEL[job.status] || job.status}</span>
-            <span className="badge">
-              范围: {formatYmd(job.start_date)} ~ {formatYmd(job.end_date)}
-            </span>
-            {job.exit_code !== null && job.exit_code !== undefined ? (
-              <span className="badge">exit_code: {job.exit_code}</span>
+      {selectedItem ? (
+        <div className="modal-backdrop" onClick={() => setSelectedItem(null)} role="presentation">
+          <section className="modal-card sync-detail-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Sync Detail</p>
+                <h2>{formatYmd(selectedItem.trade_date)}</h2>
+              </div>
+              <button className="ghost" type="button" onClick={() => setSelectedItem(null)}>
+                关闭
+              </button>
+            </div>
+
+            <div className="sync-detail-summary">
+              <span className={badgeClass(selectedItem.status)}>{STATUS_LABEL[selectedItem.status] || selectedItem.status}</span>
+              {selectedItem.is_open ? (
+                <span className="badge">完成 {selectedItem.completed_required_tasks?.length || 0} / {requiredTasks.length}</span>
+              ) : (
+                <span className="badge">该日非交易日</span>
+              )}
+            </div>
+
+            {selectedItem.is_open && selectedItem.missing_required_task_labels?.length ? (
+              <div className="sync-detail-section">
+                <h3>缺失接口</h3>
+                <div className="sync-task-chip-list">
+                  {selectedItem.missing_required_task_labels.map((label) => (
+                    <span key={label} className="badge sync-badge sync-badge--partial">{label}</span>
+                  ))}
+                </div>
+              </div>
             ) : null}
-          </div>
-        ) : null}
-        <pre className="sync-log-box">{logs || "暂无日志输出"}</pre>
-      </section>
+
+            {selectedItem.is_open && selectedItem.completed_required_task_labels?.length ? (
+              <div className="sync-detail-section">
+                <h3>已完成接口</h3>
+                <div className="sync-task-chip-list">
+                  {selectedItem.completed_required_task_labels.map((label) => (
+                    <span key={label} className="badge sync-badge sync-badge--ok">{label}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {selectedItem.task_statuses?.length ? (
+              <div className="sync-detail-section">
+                <h3>接口明细</h3>
+                <div className="sync-detail-task-list">
+                  {selectedItem.task_statuses.map((task) => (
+                    <div key={task.task} className="sync-detail-task-row">
+                      <span>{task.label}</span>
+                      <span className={badgeClass(task.status)}>{task.status === "synced" ? "已完成" : "缺失"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
-

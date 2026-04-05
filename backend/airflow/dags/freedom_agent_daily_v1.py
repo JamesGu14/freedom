@@ -12,8 +12,7 @@ from airflow.operators.python import PythonOperator
 
 DAG_ID = "freedom_agent_daily_v1"
 BACKEND_API_BASE = os.getenv("FREEDOM_BACKEND_API_BASE", "http://backend:9000/api").rstrip("/")
-ADMIN_USERNAME = os.getenv("FREEDOM_ADMIN_USERNAME", "james")
-ADMIN_PASSWORD = os.getenv("FREEDOM_ADMIN_PASSWORD", "james1031")
+FREEDOM_API_KEY = os.getenv("FREEDOM_API_KEY", "").strip()
 
 
 def _post_json(url: str, payload: dict[str, object], token: str | None = None) -> dict[str, object]:
@@ -35,19 +34,10 @@ def _get_json(url: str, token: str | None = None) -> dict[str, object]:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _login_access_token() -> str:
-    try:
-        payload = {
-            "username": ADMIN_USERNAME,
-            "password": ADMIN_PASSWORD,
-        }
-        data = _post_json(f"{BACKEND_API_BASE}/auth/login", payload)
-        token = str(data.get("access_token") or "").strip()
-        if not token:
-            raise AirflowException("auth/login returned empty access_token")
-        return token
-    except (error.HTTPError, error.URLError, TimeoutError) as exc:
-        raise AirflowException(f"backend auth/login failed: {exc}") from exc
+def _automation_access_token() -> str:
+    if not FREEDOM_API_KEY:
+        raise AirflowException("FREEDOM_API_KEY is required")
+    return FREEDOM_API_KEY
 
 
 def _noop_step(step_name: str, **context) -> None:  # noqa: ARG001
@@ -56,7 +46,7 @@ def _noop_step(step_name: str, **context) -> None:  # noqa: ARG001
 
 def _trigger_agent_run(**context) -> None:
     trade_date = str(context.get("ds_nodash") or "").strip()
-    token = _login_access_token()
+    token = _automation_access_token()
     query = parse.urlencode({"trade_date": trade_date})
     result = _post_json(f"{BACKEND_API_BASE}/agent-freedom/run?{query}", payload={}, token=token)
     status = str(result.get("status") or "").strip()
@@ -66,7 +56,7 @@ def _trigger_agent_run(**context) -> None:
 
 def _verify_report(**context) -> None:
     trade_date = str(context.get("ds_nodash") or "").strip()
-    token = _login_access_token()
+    token = _automation_access_token()
     query = parse.urlencode({"trade_date": trade_date})
     data = _get_json(f"{BACKEND_API_BASE}/agent-freedom/report/latest?{query}", token=token)
     item = data.get("item") if isinstance(data, dict) else None
@@ -76,7 +66,7 @@ def _verify_report(**context) -> None:
 
 def _verify_push(**context) -> None:
     trade_date = str(context.get("ds_nodash") or "").strip()
-    token = _login_access_token()
+    token = _automation_access_token()
     query = parse.urlencode({"trade_date": trade_date})
     data = _get_json(f"{BACKEND_API_BASE}/agent-freedom/report/latest?{query}", token=token)
     item = data.get("item") if isinstance(data, dict) else None

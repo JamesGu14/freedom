@@ -15,11 +15,26 @@ from app.data.mongo_data_sync_job_run import (
     update_data_sync_job_run,
 )
 
-REQUIRED_DAILY_TASKS = [
-    "pull_daily",
-    "sync_stk_factor_pro",
-    "sync_shenwan_daily",
-    "sync_zhishu_data",
+DISPLAY_TASKS = [
+    {"task": "pull_daily", "label": "日线主链路"},
+    {"task": "sync_suspend_d", "label": "停复牌"},
+    {"task": "sync_stk_factor_pro", "label": "技术因子"},
+    {"task": "sync_cyq_perf", "label": "筹码因子"},
+    {"task": "sync_moneyflow_dc", "label": "个股资金流"},
+    {"task": "sync_moneyflow_hsgt", "label": "沪深港通资金流"},
+    {"task": "sync_income", "label": "利润表"},
+    {"task": "sync_balancesheet", "label": "资产负债表"},
+    {"task": "sync_cashflow", "label": "现金流量表"},
+    {"task": "sync_fina_indicator", "label": "财务指标"},
+    {"task": "sync_dividend", "label": "分红送股"},
+    {"task": "sync_stk_holdernumber", "label": "股东人数"},
+    {"task": "sync_top10_holders", "label": "前十大股东"},
+    {"task": "sync_top10_floatholders", "label": "前十大流通股东"},
+    {"task": "sync_margin", "label": "融资融券汇总"},
+    {"task": "sync_margin_detail", "label": "融资融券明细"},
+    {"task": "sync_index_daily", "label": "指数日线"},
+    {"task": "sync_shenwan_daily", "label": "申万行业日线"},
+    {"task": "sync_zhishu_data", "label": "指数扩展数据"},
 ]
 WEEKLY_TASKS = ["sync_shenwan_members", "compact_parquet"]
 
@@ -83,26 +98,42 @@ def get_calendar_status(start_date: str, end_date: str) -> dict[str, Any]:
         "non_trading": 0,
     }
 
-    required_set = set(REQUIRED_DAILY_TASKS)
+    required_set = {item["task"] for item in DISPLAY_TASKS}
+    label_map = {item["task"]: item["label"] for item in DISPLAY_TASKS}
     weekly_set = set(WEEKLY_TASKS)
 
     for row in calendar_rows:
         trade_date = str(row.get("cal_date") or "")
         is_open = str(row.get("is_open") or "") == "1"
-        completed_tasks = sorted(task_map.get(trade_date, set()))
+        completed_set = task_map.get(trade_date, set())
+        completed_tasks = sorted(completed_set)
 
         status = "non_trading"
         missing_tasks: list[str] = []
+        missing_labels: list[str] = []
+        completed_required_tasks: list[str] = []
+        completed_required_labels: list[str] = []
+        task_statuses: list[dict[str, str]] = []
         if not is_open:
             summary["non_trading"] += 1
         else:
             summary["trading_days"] += 1
-            completed_required = required_set.intersection(completed_tasks)
-            missing_tasks = sorted(required_set.difference(completed_required))
+            completed_required_tasks = [item["task"] for item in DISPLAY_TASKS if item["task"] in completed_set]
+            completed_required_labels = [label_map[task] for task in completed_required_tasks]
+            missing_tasks = [item["task"] for item in DISPLAY_TASKS if item["task"] not in completed_set]
+            missing_labels = [label_map[task] for task in missing_tasks]
+            task_statuses = [
+                {
+                    "task": item["task"],
+                    "label": item["label"],
+                    "status": "synced" if item["task"] in completed_set else "missing",
+                }
+                for item in DISPLAY_TASKS
+            ]
             if not missing_tasks:
                 status = "synced_all_required"
                 summary["synced_all_required"] += 1
-            elif len(completed_required) > 0:
+            elif completed_required_tasks:
                 status = "partially_synced"
                 summary["partially_synced"] += 1
             else:
@@ -115,16 +146,19 @@ def get_calendar_status(start_date: str, end_date: str) -> dict[str, Any]:
                 "is_open": is_open,
                 "status": status,
                 "completed_tasks": completed_tasks,
-                "completed_required_tasks": sorted(required_set.intersection(completed_tasks)),
+                "completed_required_tasks": completed_required_tasks,
+                "completed_required_task_labels": completed_required_labels,
                 "completed_weekly_tasks": sorted(weekly_set.intersection(completed_tasks)),
                 "missing_required_tasks": missing_tasks,
+                "missing_required_task_labels": missing_labels,
+                "task_statuses": task_statuses,
             }
         )
 
     return {
         "start_date": start,
         "end_date": end,
-        "required_tasks": REQUIRED_DAILY_TASKS,
+        "required_tasks": DISPLAY_TASKS,
         "weekly_tasks": WEEKLY_TASKS,
         "summary": summary,
         "items": items,
@@ -138,7 +172,10 @@ def get_missing_dates(start_date: str, end_date: str) -> dict[str, Any]:
             "trade_date": item["trade_date"],
             "status": item["status"],
             "missing_required_tasks": item["missing_required_tasks"],
+            "missing_required_task_labels": item["missing_required_task_labels"],
             "completed_required_tasks": item["completed_required_tasks"],
+            "completed_required_task_labels": item["completed_required_task_labels"],
+            "task_statuses": item["task_statuses"],
         }
         for item in calendar["items"]
         if item["is_open"] and item["status"] in {"missing", "partially_synced"}
@@ -371,4 +408,3 @@ def stop_sync_job(job_id: str) -> dict[str, Any]:
     if not updated:
         raise ValueError("job not found")
     return updated
-

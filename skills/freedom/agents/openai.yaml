@@ -1,4 +1,4 @@
 interface:
   display_name: "Freedom"
-  short_description: "Operate the Freedom market data workflows"
-  default_prompt: "Use $freedom to work with the Freedom market data API and workflows."
+  short_description: "Run Freedom through the current /freedom API"
+  default_prompt: "Use $freedom to work with the current Freedom market data API: verify auth, resolve trade date or ts_code, then run screening, ranking, or company analysis workflows."

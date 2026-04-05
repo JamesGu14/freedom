@@ -25,7 +25,7 @@
 - **数据源**：TuShare（A 股）
 - **存储/查询**：Parquet（原始与特征落地） + DuckDB（本地分析/查询引擎）
 - **后端**：Python + FastAPI
-- **定时任务**：APScheduler（盘后拉取、增量更新、指标计算）
+- **定时任务**：脚本链路 + Airflow（shared Airflow 已接管每日数据同步与周审计）
 - **缓存（可选）**：Redis（热点 K 线/指标、回测结果缓存、任务状态）
 - **前端**：Next.js + ECharts
 - **可观测性（建议）**：结构化日志 + 基础指标（后续可接 Prometheus/Grafana）
@@ -128,13 +128,64 @@ DuckDB 文件位置：`data/quant.duckdb`。项目使用 DuckDB 作为元数据/
   - `atr`, `cci`, `wr`, `wr1`, `updays`, `downdays`
   - `pe`, `pe_ttm`, `pb`, `turnover_rate`, `turnover_rate_f`, `volume_ratio`
 
+## 2.3 本地数据完整性审计
+
+项目提供一个离线审计脚本，用于检查当前本地日频数据源在日期维度和覆盖维度上的完整性，只读取本地 MongoDB、DuckDB、Parquet，不访问外部数据源。
+
+运行方式：
+
+```bash
+python backend/scripts/audit/run_data_integrity_audit.py
+
+# 只检查部分数据集
+python backend/scripts/audit/run_data_integrity_audit.py \
+  --datasets daily,daily_basic,moneyflow_hsgt \
+  --start-date 20260301 \
+  --end-date 20260306
+```
+
+报告输出目录固定为：
+
+```text
+logs/data_audit/<run_id>/
+```
+
+当前首版纳入审计的主要数据集：
+
+- 个股日频矩阵：`daily`、`daily_basic`、`daily_limit`、`indicators`、`adj_factor`、`cyq_perf`、`moneyflow_dc`
+- 市场/指数日频：`shenwan_daily`、`citic_daily`、`market_index_dailybasic`、Mongo `index_factor_pro`
+- 仅做日期缺口：`moneyflow_hsgt`
+
+当前审计规则已经补充了几类数据集特定口径：
+
+- `moneyflow_hsgt` 不再直接对齐 `SSE` 全交易日日历，因为真实运行已验证其可交易日口径与 A 股日历不完全一致。
+- `moneyflow_dc` 对已验证的源头空日 `20231122` 做豁免，不再将其记为本地缺失。
+- `daily_basic`、`daily_limit`、`cyq_perf` 的覆盖审计会在 `daily` 基准上排除少量已确认不适用的代码或后缀，避免把接口能力差异误判为本地缺数。
+- `index_factor_pro` 的 `rowcount` 优先参考同日本地 `features/idx_factor_pro` Parquet 行数，而不是一律使用最近 20 日中位数。
+- `shenwan_daily`、`citic_daily` 等市场类数据的 `rowcount` 审计会自动抑制已经稳定下来的平台期切换，避免把永久口径变更误报成持续异常。
+
+截至 `2026-03-14` 的最新全量基线：
+
+- 审计报告：`logs/data_audit/full_audit_20260314_all_green_final/`
+- 结果：`12 / 12 green`
+- Airflow 周期任务：`backend/airflow/dags/freedom_data_integrity_weekly.py`
+  - 调度：每周六 `06:00` `Asia/Shanghai`
+  - Mongo 落库集合：`data_integrity_audit_runs`
+  - 共享部署：`/home/james/projects/ai-personal-os/infra/shared-infra/airflow/dags/freedom_data_integrity_weekly.py`
+
+当前首版暂不纳入：
+
+- 非日频或事件型数据：`stk_surv`、`stock_basic`、行业成员数据
+- 特殊子集覆盖数据：`ccass_hold`、`hk_hold`
+- 价格分布型大数据：`cyq_chips`
+
 ---
 
 ## 3. 总体架构
 
 ```mermaid
 flowchart LR
-  A[TuShare API] --> B[APScheduler Jobs<br/>pull + update]
+  A[TuShare API] --> B[Daily Scripts / Airflow<br/>pull + update]
   B --> C[Raw Parquet Store<br/>partitioned by ts_code/year]
   C --> D[Feature Pipeline<br/>indicators/factors]
   D --> E[(DuckDB Feature Store)]
@@ -382,17 +433,13 @@ GET /api/signal?strategy_id=&trade_date=&ts_code=
 
 `GET /api/backtests/{backtest_id}/trades`：交易明细
 
-## 7. 定时任务（APScheduler）
+## 7. 定时任务
 
-建议 Job 列表：
+当前调度现状：
 
-`job_trade_cal_sync`：每日/每周同步交易日历
-
-`job_daily_ingest`：交易日盘后拉取 daily/daily_basic/adj_factor
-
-`job_feature_compute`：增量计算当日特征
-
-`job_health_check`：数据缺失与任务告警（自用可先日志输出）
+- 主数据同步现在由 `ai-personal-os` 的 shared Airflow DAG `freedom_market_data_daily` 在 `20:30 Asia/Shanghai` 编排执行
+- `backend/scripts/daily/daily.sh` 保留为本地/手工补跑入口，不再作为 shared Airflow 的执行单元
+- 数据完整性审计已经接入独立 Airflow DAG：`freedom_data_integrity_weekly`
 
 **调度注意：**
 
@@ -401,6 +448,16 @@ GET /api/signal?strategy_id=&trade_date=&ts_code=
 失败重试（指数退避或固定次数）。
 
 幂等：同一天可重复跑。
+
+补充：
+
+- 当前主数据链路已经迁到 shared Airflow 的 `freedom_market_data_daily` DAG。
+- 数据完整性审计已经额外支持一个独立 Airflow DAG：
+  - DAG ID：`freedom_data_integrity_weekly`
+  - 调度：每周六 `06:00`
+  - 行为：共享 Airflow 先异步触发 Freedom 内部审计 run，再轮询其完成状态
+  - 落库：审计运行状态与摘要统一写入 MongoDB `data_integrity_audit_runs`
+  - 共享 Airflow 部署路径：`/home/james/projects/ai-personal-os/infra/shared-infra/airflow/dags/freedom_data_integrity_weekly.py`
 
 ## 8. 缓存策略（Redis，可选）
 
@@ -427,7 +484,7 @@ quant-platform/
       api/                 # FastAPI routers
       core/                # config, logging, constants
       data/                # parquet/duckdb access, tushare client
-      jobs/                # APScheduler jobs
+      jobs/                # 预留：未来如需内部作业封装可放这里
       features/            # indicator calculators
       strategies/          # strategy templates + evaluation
       backtest/            # matching engine + metrics

@@ -1002,9 +1002,14 @@ export default function StockKline() {
             </div>
           )}
         </div>
-        <Link className="primary" href={backHref}>
-          返回
-        </Link>
+        <div className="research-header-actions">
+          <Link className="link-button" href={`/research/stocks/${encodeURIComponent(tsCode || "000001.SZ")}`}>
+            研究中心
+          </Link>
+          <Link className="primary" href={backHref}>
+            返回
+          </Link>
+        </div>
       </header>
 
       {error ? <div className="error">{error}</div> : null}

@@ -17,6 +17,7 @@ __pycache__/
 *$py.class
 bak/
 logs/
+.worktrees/
 
 settings.local.json
 scripts/ralph/.last-branch
@@ -90,6 +91,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/tushare_5000积分*.csv
 
 # PyBuilder
 .pybuilder/

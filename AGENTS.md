@@ -29,7 +29,7 @@
 | Backend | FastAPI | Python 3.11+, port 9000 |
 | Frontend | Next.js 14 | React 18, ECharts 5, port 3000 |
 | Reverse Proxy | Nginx | basePath `/freedom` |
-| Scheduler | APScheduler | Daily at 18:00 Asia/Shanghai |
+| Scheduler | Shell scripts + Airflow | shared Airflow 已接管每日数据同步与周审计；`daily.sh` 保留为本地/手工脚本入口 |
 
 ---
 
@@ -71,7 +71,6 @@ freedom/
 │   │   │   └── users.py
 │   │   └── strategies/        # Strategy templates (minimal)
 │   ├── scripts/
-│   │   ├── scheduler.py       # APScheduler setup
 │   │   ├── daily/             # Daily scheduled jobs
 │   │   │   ├── pull_daily_history.py
 │   │   │   ├── calculate_signal.py
@@ -132,18 +131,14 @@ freedom/
 
 ```bash
 # 1. Start infrastructure services
-docker-compose up -d mongodb redis
+docker-compose up -d mongodb
 
 # 2. Backend (Terminal 1)
 cd backend
 pip install -e .
 uvicorn app.main:app --reload --host 0.0.0.0 --port 9000 --reload-dir app
 
-# 3. Scheduler (Terminal 2) - Optional, runs daily jobs
-cd backend
-python scripts/scheduler.py
-
-# 4. Frontend (Terminal 3)
+# 3. Frontend (Terminal 2)
 cd frontend
 npm run dev
 # Opens http://localhost:3000/freedom

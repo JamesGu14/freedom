@@ -12,6 +12,12 @@ These are the response and input rules that matter in practice.
 - Accept user input in `YYYYMMDD` or `YYYY-MM-DD`.
 - Expect many market responses to use `YYYYMMDD`.
 
+## Auth Model
+
+- Browser login is proxied to `personal-authenticator`.
+- Protected API verification is delegated to `personal-authenticator`.
+- OpenClaw should use an existing bearer token, usually a `james`-owned API Key.
+
 ## Response Shape
 
 Common paginated structure:

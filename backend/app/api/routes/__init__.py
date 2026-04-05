@@ -17,6 +17,8 @@ from app.api.routes.stocks import router as stocks_router
 from app.api.routes.strategies import router as strategies_router
 from app.api.routes.strategy_signals import router as strategy_signals_router
 from app.api.routes.market_data import router as market_data_router
+from app.api.routes.research import router as research_router
+from app.api.routes.internal_audits import router as internal_audits_router
 from app.api.routes.users import router as users_router
 
 __all__ = [
@@ -37,5 +39,7 @@ __all__ = [
     "strategies_router",
     "strategy_signals_router",
     "market_data_router",
+    "research_router",
+    "internal_audits_router",
     "users_router",
 ]

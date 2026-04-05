@@ -12,7 +12,6 @@ dependencies = [
   "pyarrow>=14.0.0",
   "tushare>=1.4.0",
   "pydantic-settings>=2.2.1",
-  "apscheduler>=3.10.4",
   "tqdm>=4.66.0",
   "pymongo>=4.7.0",
   "redis>=5.0.0",

@@ -99,6 +99,16 @@ const NAV = [
     ),
   },
   {
+    href: "/research",
+    label: "研究中心",
+    icon: (
+      <Ico>
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </Ico>
+    ),
+  },
+  {
     href: "/watchlist",
     label: "自选",
     icon: (
@@ -133,11 +143,9 @@ const NAV = [
 /* ── App Shell with sidebar ── */
 function AppShell({ Component, pageProps }) {
   const router = useRouter();
-  const { token, username, initialized, logout } = useAuth();
+  const { token, username, roles, initialized, logout } = useAuth();
   const isLogin = router.pathname === "/login";
-  const isAdmin = ["admin", "james"].includes(
-    String(username || "").trim().toLowerCase()
-  );
+  const isAdmin = Array.isArray(roles) && roles.some((role) => String(role).trim().toLowerCase() === "admin");
 
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);

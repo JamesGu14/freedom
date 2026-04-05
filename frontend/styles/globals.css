@@ -2988,6 +2988,17 @@ td:first-child {
   font-size: 12px;
 }
 
+.sync-calendar-cell-button {
+  width: 100%;
+  cursor: pointer;
+  appearance: none;
+  text-align: left;
+}
+
+.sync-calendar-cell-button:disabled {
+  cursor: default;
+}
+
 .sync-status {
   border: 1px solid var(--border);
 }
@@ -3030,6 +3041,12 @@ td:first-child {
   font-size: 11px;
 }
 
+.sync-task-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .sync-job-meta {
   margin: 10px 0;
   display: flex;
@@ -3062,6 +3079,308 @@ td:first-child {
 .sync-job-btn {
   min-width: 132px;
   justify-content: center;
+}
+
+.sync-detail-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.sync-detail-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.sync-detail-section + .sync-detail-section {
+  margin-top: 14px;
+}
+
+.sync-detail-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.sync-detail-task-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sync-detail-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+/* ================================================================
+   RESEARCH CENTER
+   ================================================================ */
+.research-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.research-home-grid,
+.research-section-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.research-home-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-bottom: 14px;
+}
+
+.research-home-card h2,
+.research-section-grid h2,
+.research-section-grid h3 {
+  margin: 0;
+}
+
+.research-section-grid .indicator-switcher {
+  padding: 0;
+}
+
+.research-toolbar-stack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.research-module-list,
+.research-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.research-module-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.research-module-card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.research-module-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.research-api-list {
+  display: grid;
+  gap: 8px;
+}
+
+.research-api-list code {
+  display: block;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: "JetBrains Mono", "Monaco", "Menlo", monospace;
+  font-size: 12px;
+}
+
+.research-key-value-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.research-key-value-item {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.research-key-value-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.research-key-value-item strong {
+  font-size: 16px;
+}
+
+.research-table-wrap {
+  margin-top: 10px;
+}
+
+.research-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.research-chart-grid h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.research-chart-note {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.research-chart-canvas {
+  width: 100%;
+  height: 420px;
+  min-height: 300px;
+  margin-top: 14px;
+}
+
+.research-chart-canvas--compact {
+  height: 320px;
+  margin-top: 0;
+}
+
+.research-timeline {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.research-timeline-item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.research-timeline-dot {
+  width: 14px;
+  height: 14px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: #94a3b8;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.12);
+}
+
+.research-timeline-dot--survey {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.research-timeline-dot--suspend {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16);
+}
+
+.research-timeline-content {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.research-timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.research-timeline-content h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.research-timeline-content p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.research-detail-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.research-detail-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(248, 250, 252, 0.78);
+  overflow: hidden;
+}
+
+.research-detail-card summary {
+  cursor: pointer;
+  padding: 14px 16px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.research-detail-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.research-detail-body {
+  padding: 0 16px 16px;
+}
+
+.research-raw-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.research-raw-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.research-raw-item summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.research-raw-item pre {
+  margin: 10px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.research-index-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(248, 250, 252, 0.72);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.research-index-card--active {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .sync-job-btn--stop {
