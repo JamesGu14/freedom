@@ -17,6 +17,12 @@ __pycache__/
 *$py.class
 bak/
 logs/
+.worktrees/
+
+settings.local.json
+scripts/ralph/.last-branch
+scripts/ralph/prd.json
+scripts/ralph/progress.txt
 
 # C extensions
 *.so
@@ -85,6 +91,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/tushare_5000积分*.csv
 
 # PyBuilder
 .pybuilder/
@@ -220,3 +227,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Local AI / agent tooling
+.claude/
+.codex
+.codex/

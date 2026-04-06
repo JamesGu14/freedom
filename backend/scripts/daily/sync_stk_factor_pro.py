@@ -17,6 +17,7 @@ sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings  # noqa: E402
 from app.data.mongo import get_collection  # noqa: E402
+from app.data.mongo_data_sync_date import mark_sync_done  # noqa: E402
 from app.data.tushare_client import fetch_stk_factor_pro  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -295,6 +296,7 @@ def main() -> None:
     total_buffered = 0
     total_api_rows = 0
     synced_days = 0
+    synced_dates: list[str] = []
     current_year = ""
     year_frames: list[pd.DataFrame] = []
 
@@ -329,6 +331,7 @@ def main() -> None:
 
                 year_frames.append(normalized_df)
                 synced_days += 1
+                synced_dates.append(trade_date)
                 progress.set_postfix(
                     date=trade_date,
                     api_rows=api_rows,
@@ -346,6 +349,8 @@ def main() -> None:
         total_saved += saved
         total_buffered += buffered
 
+    for d in synced_dates:
+        mark_sync_done(d, "sync_stk_factor_pro")
     logger.info(
         "sync_stk_factor_pro done: synced_days=%s skipped_non_trading=%s api_rows=%s buffered_rows=%s saved_rows=%s",
         synced_days,

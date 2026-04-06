@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_shared_business_username
 from app.services.strategy_service import (
     create_strategy,
     create_version,
@@ -22,6 +22,7 @@ router = APIRouter()
 
 class StrategyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    strategy_key: str = Field(min_length=1, max_length=80)
     description: str = ""
     owner: str = ""
 
@@ -71,13 +72,14 @@ def create_strategy_item(
     payload: StrategyCreateRequest,
     current_user: dict[str, object] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    username = str(current_user.get("username") or "")
+    del current_user
     try:
         item = create_strategy(
             name=payload.name,
+            strategy_key=payload.strategy_key,
             description=payload.description,
             owner=payload.owner,
-            created_by=username,
+            created_by=get_shared_business_username(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -135,14 +137,14 @@ def create_strategy_version(
     payload: StrategyVersionCreateRequest,
     current_user: dict[str, object] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    username = str(current_user.get("username") or "")
+    del current_user
     try:
         item = create_version(
             strategy_id=strategy_id,
             params_snapshot=payload.params_snapshot,
             code_ref=payload.code_ref,
             change_log=payload.change_log,
-            created_by=username,
+            created_by=get_shared_business_username(),
             version=payload.version,
         )
     except ValueError as exc:
@@ -151,4 +153,3 @@ def create_strategy_version(
             raise HTTPException(status_code=404, detail=detail) from exc
         raise HTTPException(status_code=400, detail=detail) from exc
     return item
-

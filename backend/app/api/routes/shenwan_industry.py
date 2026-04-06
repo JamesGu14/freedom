@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.api.stock_code import resolve_ts_code_input
 from app.data.mongo_shenwan import (
     get_shenwan_by_index_code,
     get_shenwan_by_industry_code,
@@ -50,8 +51,9 @@ def get_shenwan_members(
     page_size: int = Query(default=200, ge=1, le=2000),
 ) -> dict[str, object]:
     is_new_value = is_new.upper() if is_new else None
+    normalized_ts_code = resolve_ts_code_input(ts_code, strict=False) if ts_code else None
     items, total = list_shenwan_members(
-        ts_code=ts_code,
+        ts_code=normalized_ts_code,
         l1_code=l1_code,
         l2_code=l2_code,
         l3_code=l3_code,
@@ -101,8 +103,9 @@ def get_sector_members(
     is_new_value = is_new.upper() if is_new else None
     if is_new_value == "ALL":
         is_new_value = None
+    normalized_ts_code = resolve_ts_code_input(ts_code, strict=False) if ts_code else None
     items, total = list_shenwan_members(
-        ts_code=ts_code,
+        ts_code=normalized_ts_code,
         l1_code=l1_code,
         l2_code=l2_code,
         l3_code=l3_code,

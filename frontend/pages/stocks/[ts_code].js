@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
@@ -53,6 +53,32 @@ const OSCILLATOR_LABEL_MAP = {
   atr: "ATR",
 };
 
+const DETAIL_HISTORY_LIMIT = 480;
+const STOCK_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
+const stockDetailCache = new Map();
+
+const getStockDetailCache = (tsCode) => {
+  const key = String(tsCode || "").trim().toUpperCase();
+  const entry = stockDetailCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - Number(entry.updatedAt || 0) > STOCK_DETAIL_CACHE_TTL_MS) {
+    stockDetailCache.delete(key);
+    return null;
+  }
+  return entry;
+};
+
+const setStockDetailCache = (tsCode, patch) => {
+  const key = String(tsCode || "").trim().toUpperCase();
+  if (!key) return;
+  const previous = stockDetailCache.get(key) || {};
+  stockDetailCache.set(key, {
+    ...previous,
+    ...patch,
+    updatedAt: Date.now(),
+  });
+};
+
 export default function StockKline() {
   const router = useRouter();
   const { ts_code: tsCode } = router.query;
@@ -64,6 +90,7 @@ export default function StockKline() {
   const [indicators, setIndicators] = useState([]);
   const [stockInfo, setStockInfo] = useState(null);
   const [sectorMembers, setSectorMembers] = useState([]);
+  const [indicatorsLoading, setIndicatorsLoading] = useState(false);
   const [sectorLoading, setSectorLoading] = useState(false);
   const [adjPage, setAdjPage] = useState(1);
   const [adjPageSize] = useState(10);
@@ -119,51 +146,165 @@ export default function StockKline() {
     return displayAdj.slice(start, start + adjPageSize);
   }, [displayAdj, adjPage, adjPageSize]);
 
-  const fetchData = async () => {
-    if (!tsCode) {
-      return;
+  const applyCacheEntry = useCallback((entry) => {
+    if (!entry) return;
+    if (Array.isArray(entry.daily)) {
+      setDaily(entry.daily);
     }
-    setLoading(true);
-    setError("");
-    setSectorLoading(true);
-    try {
-      const [candlesRes, basicRes, featuresRes, sectorRes] = await Promise.all([
-        apiFetch(`/stocks/${tsCode}/candles`),
-        apiFetch(`/stocks/${tsCode}/basic`),
-        apiFetch(`/stocks/${tsCode}/features`),
-        apiFetch(`/sectors/members?ts_code=${encodeURIComponent(tsCode)}&is_new=Y&page_size=50`),
-      ]);
-      if (!candlesRes.ok) {
-        throw new Error(`加载失败: ${candlesRes.status}`);
-      }
-      const data = await candlesRes.json();
-      setDaily(normalizeDailyRows(data.daily || []));
-      setAdjFactor(normalizeAdjRows(data.adj_factor || []));
-      if (basicRes.ok) {
-        const info = await basicRes.json();
-        setStockInfo(info);
-      }
-      if (featuresRes.ok) {
-        const featuresData = await featuresRes.json();
-        setIndicators(featuresData.indicators || []);
-      }
-      if (sectorRes.ok) {
-        const sectorData = await sectorRes.json();
-        setSectorMembers(sectorData.items || []);
-      } else {
-        setSectorMembers([]);
-      }
-    } catch (err) {
-      setError(err.message || "加载失败");
-    } finally {
-      setLoading(false);
-      setSectorLoading(false);
+    if (Array.isArray(entry.adjFactor)) {
+      setAdjFactor(entry.adjFactor);
     }
-  };
+    if (entry.stockInfo) {
+      setStockInfo(entry.stockInfo);
+    }
+    if (Array.isArray(entry.indicators)) {
+      setIndicators(entry.indicators);
+    }
+    if (Array.isArray(entry.sectorMembers)) {
+      setSectorMembers(entry.sectorMembers);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [tsCode]);
+    if (!tsCode || typeof tsCode !== "string") {
+      return;
+    }
+
+    let cancelled = false;
+    const normalizedCode = String(tsCode).trim().toUpperCase();
+    const cached = getStockDetailCache(normalizedCode);
+    const hasPrimaryCache = Boolean(
+      cached &&
+      Array.isArray(cached.daily) &&
+      cached.daily.length > 0 &&
+      Array.isArray(cached.adjFactor)
+    );
+    const hasSecondaryCache = Boolean(
+      cached &&
+      Array.isArray(cached.indicators) &&
+      Array.isArray(cached.sectorMembers)
+    );
+
+    setError("");
+    if (hasPrimaryCache || hasSecondaryCache) {
+      applyCacheEntry(cached);
+    } else {
+      setDaily([]);
+      setAdjFactor([]);
+      setIndicators([]);
+      setStockInfo(null);
+      setSectorMembers([]);
+    }
+    setLoading(!hasPrimaryCache);
+    setIndicatorsLoading(!hasSecondaryCache);
+    setSectorLoading(!hasSecondaryCache);
+
+    const loadPrimary = async () => {
+      if (hasPrimaryCache) {
+        return;
+      }
+      try {
+        const [candlesRes, basicRes] = await Promise.all([
+          apiFetch(`/stocks/${normalizedCode}/candles?limit=${DETAIL_HISTORY_LIMIT}`),
+          apiFetch(`/stocks/${normalizedCode}/basic`),
+        ]);
+        if (!candlesRes.ok) {
+          throw new Error(`加载失败: ${candlesRes.status}`);
+        }
+        const data = await candlesRes.json();
+        const nextDaily = normalizeDailyRows(data.daily || []);
+        const nextAdjFactor = normalizeAdjRows(data.adj_factor || []);
+        let nextStockInfo = null;
+        if (basicRes.ok) {
+          nextStockInfo = await basicRes.json();
+        }
+        if (cancelled) {
+          return;
+        }
+        setDaily(nextDaily);
+        setAdjFactor(nextAdjFactor);
+        setStockInfo(nextStockInfo);
+        setStockDetailCache(normalizedCode, {
+          daily: nextDaily,
+          adjFactor: nextAdjFactor,
+          stockInfo: nextStockInfo,
+        });
+      } catch (err) {
+        if (!cancelled && !hasPrimaryCache) {
+          setError(err.message || "加载失败");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    const loadSecondary = async () => {
+      if (hasSecondaryCache) {
+        return;
+      }
+      try {
+        const [featuresRes, sectorRes] = await Promise.all([
+          apiFetch(`/stocks/${normalizedCode}/features?limit=${DETAIL_HISTORY_LIMIT}`),
+          apiFetch(`/sectors/members?ts_code=${encodeURIComponent(normalizedCode)}&is_new=Y&page_size=1`),
+        ]);
+        let nextIndicators = [];
+        let nextSectorMembers = [];
+        if (featuresRes.ok) {
+          const featuresData = await featuresRes.json();
+          nextIndicators = featuresData.indicators || [];
+        }
+        if (sectorRes.ok) {
+          const sectorData = await sectorRes.json();
+          nextSectorMembers = sectorData.items || [];
+        }
+        if (cancelled) {
+          return;
+        }
+        startTransition(() => {
+          setIndicators(nextIndicators);
+          setSectorMembers(nextSectorMembers);
+        });
+        setStockDetailCache(normalizedCode, {
+          indicators: nextIndicators,
+          sectorMembers: nextSectorMembers,
+        });
+      } finally {
+        if (!cancelled) {
+          setIndicatorsLoading(false);
+          setSectorLoading(false);
+        }
+      }
+    };
+
+    loadPrimary();
+
+    let idleId = null;
+    let timerId = null;
+    const scheduleSecondary = () => {
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+        idleId = window.requestIdleCallback(() => {
+          void loadSecondary();
+        }, { timeout: 1000 });
+      } else {
+        timerId = window.setTimeout(() => {
+          void loadSecondary();
+        }, hasPrimaryCache ? 0 : 200);
+      }
+    };
+    scheduleSecondary();
+
+    return () => {
+      cancelled = true;
+      if (idleId !== null && typeof window !== "undefined" && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timerId !== null && typeof window !== "undefined") {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [applyCacheEntry, tsCode]);
 
   useEffect(() => {
     setAdjPage(1);
@@ -762,7 +903,7 @@ export default function StockKline() {
     return () => {
       mounted = false;
     };
-  }, [sortedDaily, displayAdj, adjMap, indicators, chartReady, oscillatorMode]);
+  }, [sortedDaily, indicators, chartReady, oscillatorMode]);
 
   useEffect(() => {
     if (!chartInstanceRef.current || sortedDaily.length === 0) return;
@@ -861,9 +1002,14 @@ export default function StockKline() {
             </div>
           )}
         </div>
-        <Link className="primary" href={backHref}>
-          返回
-        </Link>
+        <div className="research-header-actions">
+          <Link className="link-button" href={`/research/stocks/${encodeURIComponent(tsCode || "000001.SZ")}`}>
+            研究中心
+          </Link>
+          <Link className="primary" href={backHref}>
+            返回
+          </Link>
+        </div>
       </header>
 
       {error ? <div className="error">{error}</div> : null}
@@ -885,6 +1031,7 @@ export default function StockKline() {
           <>
             <div className="indicator-switcher">
               <span className="indicator-switcher-label">副图指标</span>
+              {indicatorsLoading ? <span className="indicator-switcher-label">技术指标加载中...</span> : null}
               {OSCILLATOR_OPTIONS.map((option) => (
                 <button
                   key={option.key}

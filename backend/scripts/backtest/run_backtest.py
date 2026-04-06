@@ -12,6 +12,7 @@ sys.path.append(str(SCRIPT_ROOT))
 from app.data.duckdb_backtest_store import normalize_date  # noqa: E402
 from app.data.mongo_backtest import ensure_strategy_backtest_indexes, get_backtest_run, get_strategy_version  # noqa: E402
 from app.quant.engine import BacktestRunConfig, run_backtest_with_guard  # noqa: E402
+from app.quant.params_registry import validate_and_normalize_params  # noqa: E402
 from app.quant.registry import load_strategy  # noqa: E402
 from app.services.backtest_service import create_backtest_run_meta  # noqa: E402
 
@@ -74,8 +75,15 @@ def main() -> None:
     version = get_strategy_version(strategy_version_id)
     if not version:
         raise ValueError(f"strategy version not found: {strategy_version_id}")
-    params_snapshot = dict(version.get("params_snapshot") or {})
-    strategy_key = args.strategy_key.strip() or str(params_snapshot.get("strategy_key") or "multifactor_v1")
+    raw_params_snapshot = dict(version.get("params_snapshot") or {})
+    version_strategy_key = str(version.get("strategy_key") or "").strip() or str(raw_params_snapshot.get("strategy_key") or "multifactor_v1")
+    cli_strategy_key = args.strategy_key.strip()
+    if cli_strategy_key and cli_strategy_key != version_strategy_key:
+        raise ValueError(
+            f"--strategy-key mismatch: cli={cli_strategy_key}, version={version_strategy_key}, strategy_version_id={strategy_version_id}"
+        )
+    strategy_key = cli_strategy_key or version_strategy_key
+    params_snapshot, _ = validate_and_normalize_params(strategy_key, raw_params_snapshot)
 
     strategy = load_strategy(strategy_key)
     logger.info(
@@ -103,4 +111,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -15,7 +15,14 @@ const REASON_CODE_LABELS = {
   trail_stop: "回撤止盈",
   max_hold: "持仓超期",
   rotate_out: "调仓换股",
+  rotate_in: "轮动买入",
   score_rank: "评分入选",
+  trend_alignment_pass: "趋势共振通过",
+  macd_positive: "MACD为正",
+  sector_strength_min_pass: "板块强度阈值通过",
+  sector_strength_quantile_pass: "板块强度分位通过",
+  rsi_range_pass: "RSI区间通过",
+  pct_chg_cap_pass: "涨幅约束通过",
 };
 
 const formatPct = (value) => {
@@ -229,6 +236,11 @@ export default function BacktestDetailPage() {
   const [tradeTotal, setTradeTotal] = useState(0);
   const [tradePage, setTradePage] = useState(1);
   const [tradePageSize] = useState(20);
+  const [tradeCodeInput, setTradeCodeInput] = useState("");
+  const [tradeDateInput, setTradeDateInput] = useState("");
+  const [tradeCodeFilter, setTradeCodeFilter] = useState("");
+  const [tradeDateFilter, setTradeDateFilter] = useState("");
+  const [tradeFilterRevision, setTradeFilterRevision] = useState(0);
   const [signalItems, setSignalItems] = useState([]);
   const [signalTotal, setSignalTotal] = useState(0);
   const [signalPage, setSignalPage] = useState(1);
@@ -303,9 +315,12 @@ export default function BacktestDetailPage() {
   const loadTrades = useCallback(async () => {
     if (!runId) return;
     try {
-      const res = await apiFetch(
-        `/backtests/${runId}/trades?page=${tradePage}&page_size=${tradePageSize}`
-      );
+      const params = new URLSearchParams();
+      params.set("page", String(tradePage));
+      params.set("page_size", String(tradePageSize));
+      if (tradeCodeFilter) params.set("ts_code", tradeCodeFilter);
+      if (tradeDateFilter) params.set("trade_date", tradeDateFilter);
+      const res = await apiFetch(`/backtests/${runId}/trades?${params.toString()}`);
       if (!res.ok) throw new Error(`交易明细加载失败: ${res.status}`);
       const data = await res.json();
       setTradeItems(data.items || []);
@@ -313,7 +328,23 @@ export default function BacktestDetailPage() {
     } catch (err) {
       setError(err.message || "交易明细加载失败");
     }
-  }, [runId, tradePage, tradePageSize]);
+  }, [runId, tradePage, tradePageSize, tradeCodeFilter, tradeDateFilter, tradeFilterRevision]);
+
+  const applyTradeFilters = (event) => {
+    event.preventDefault();
+    const code = String(tradeCodeInput || "").trim().toUpperCase();
+    const dateRaw = String(tradeDateInput || "").trim();
+    const normalizedDate = dateRaw ? dateRaw.replaceAll("-", "") : "";
+    if (normalizedDate && (!/^\d{8}$/.test(normalizedDate))) {
+      setError("交易日格式错误，请输入 YYYY-MM-DD 或 YYYYMMDD");
+      return;
+    }
+    setError("");
+    setTradePage(1);
+    setTradeCodeFilter(code);
+    setTradeDateFilter(normalizedDate);
+    setTradeFilterRevision((prev) => prev + 1);
+  };
 
   const loadHoldingsSummary = useCallback(async () => {
     if (!runId) return;
@@ -520,6 +551,14 @@ export default function BacktestDetailPage() {
                 } ~ ${detail.end_date || "-"}`
               : "加载中..."}
           </p>
+          {runId ? (
+            <p className="usage-command">
+              <span className="usage-command-label">使用命令：</span>
+              <code className="usage-command-code">
+                python backend/scripts/backtest/run_backtest.py --run-id {runId}
+              </code>
+            </p>
+          ) : null}
         </div>
         <div className="header-actions">
           <Link className="link-button" href="/backtests">
@@ -724,7 +763,20 @@ export default function BacktestDetailPage() {
                         onMouseLeave={hideTradeTooltip}
                       >
                         <td>{item.ts_code}</td>
-                        <td>{item.stock_name || "-"}</td>
+                        <td>
+                          {item.ts_code ? (
+                            <Link
+                              className="trade-stock-link"
+                              href={`/stocks/${encodeURIComponent(item.ts_code)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {item.stock_name || item.ts_code}
+                            </Link>
+                          ) : (
+                            item.stock_name || "-"
+                          )}
+                        </td>
                         <td>{formatDate(item.trade_date)}</td>
                         <td>{formatPct(item.return_pct)}</td>
                       </tr>
@@ -764,7 +816,26 @@ export default function BacktestDetailPage() {
       ) : null}
 
       <section className="panel compact-panel" style={{ marginBottom: 8 }}>
-        <h3 style={{ marginTop: 0, marginBottom: 8 }}>交易明细</h3>
+        <div className="panel-title-row" style={{ marginBottom: 8 }}>
+          <h3 style={{ marginTop: 0, marginBottom: 0 }}>交易明细</h3>
+          <form className="trade-filter-form" onSubmit={applyTradeFilters}>
+            <input
+              className="trade-filter-input"
+              placeholder="股票代码(如 603799)"
+              value={tradeCodeInput}
+              onChange={(event) => setTradeCodeInput(event.target.value)}
+            />
+            <input
+              className="trade-filter-input"
+              placeholder="交易日 YYYY-MM-DD"
+              value={tradeDateInput}
+              onChange={(event) => setTradeDateInput(event.target.value)}
+            />
+            <button type="submit" className="primary trade-filter-btn">
+              筛选
+            </button>
+          </form>
+        </div>
         <p className="subtitle" style={{ marginTop: 0, marginBottom: 8 }}>
           说明: `方向` 是实际成交方向（BUY/SELL）；`信号` 是策略触发类型（如 BUY_ROTATE、SELL_ROTATE）。
         </p>
@@ -804,7 +875,20 @@ export default function BacktestDetailPage() {
                           </td>
                         ) : null}
                         <td className="trade-code-cell">{item.ts_code}</td>
-                        <td>{item.stock_name || "-"}</td>
+                        <td>
+                          {item.ts_code ? (
+                            <Link
+                              className="trade-stock-link"
+                              href={`/stocks/${encodeURIComponent(item.ts_code)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {item.stock_name || item.ts_code}
+                            </Link>
+                          ) : (
+                            item.stock_name || "-"
+                          )}
+                        </td>
                         <td>{item.side}</td>
                         <td>{item.signal_type || "-"}</td>
                         <td>{formatNum(item.price, 3)}</td>

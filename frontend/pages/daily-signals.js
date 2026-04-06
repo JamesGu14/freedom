@@ -1,22 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { apiFetch } from "../lib/api";
 
-const formatPct = (value) => {
-  if (value === null || value === undefined || value === "") return "-";
-  const num = Number(value);
-  if (Number.isNaN(num)) return String(value);
-  const prefix = num > 0 ? "+" : "";
-  return `${prefix}${num.toFixed(2)}%`;
-};
+const STRATEGY_PORTFOLIO_ID = "__strategy__";
 
-const getChangeClass = (value) => {
-  const num = Number(value);
-  if (Number.isNaN(num)) return "change-flat";
-  if (num > 0) return "change-up";
-  if (num < 0) return "change-down";
-  return "change-flat";
-};
+const SIGNAL_OPTIONS = [
+  { value: "", label: "全部" },
+  { value: "BUY", label: "BUY" },
+  { value: "SELL", label: "SELL" },
+  { value: "HOLD", label: "HOLD" },
+  { value: "BUY_ROTATE", label: "BUY_ROTATE" },
+  { value: "SELL_ROTATE", label: "SELL_ROTATE" },
+];
+
+const PORTFOLIO_TYPE_OPTIONS = [
+  { value: "strategy", label: "策略级" },
+];
 
 const normalizeDateValue = (value) => {
   if (!value) return "";
@@ -56,17 +56,42 @@ const buildCalendar = (year, monthIndex) => {
   return cells;
 };
 
-import { useRouter } from "next/router";
+const formatNumber = (value) => {
+  if (value === null || value === undefined || value === "") return "-";
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return num.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+};
 
-export default function DailySignals() {
+const formatScore = (value) => {
+  if (value === null || value === undefined || value === "") return "-";
+  const num = Number(value);
+  if (Number.isNaN(num)) return "-";
+  return num.toFixed(2);
+};
+
+const formatWeight = (value) => {
+  if (value === null || value === undefined || value === "") return "-";
+  const num = Number(value);
+  if (Number.isNaN(num)) return "-";
+  return `${(num * 100).toFixed(2)}%`;
+};
+
+const signalBadgeClass = (signal) => {
+  const value = String(signal || "").toUpperCase();
+  if (value.includes("BUY")) return "badge signal-badge signal-badge-buy";
+  if (value.includes("SELL")) return "badge signal-badge signal-badge-sell";
+  return "badge signal-badge signal-badge-hold";
+};
+
+export default function StrategySignalsPage() {
   const router = useRouter();
   const [dates, setDates] = useState([]);
   const [dateSet, setDateSet] = useState(new Set());
   const [selectedDate, setSelectedDate] = useState("");
-  const [stockCode, setStockCode] = useState("");
-  const [strategy, setStrategy] = useState("");
+  const [strategyVersionId, setStrategyVersionId] = useState("");
   const [signal, setSignal] = useState("");
-  const [strategies, setStrategies] = useState([]);
+  const [portfolioType, setPortfolioType] = useState("strategy");
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -75,18 +100,72 @@ export default function DailySignals() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasQuery, setHasQuery] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
+  const [total, setTotal] = useState(0);
   const [returnUrl, setReturnUrl] = useState("/daily-signals");
 
   useEffect(() => {
-    // 使用 router.asPath 获取不带 basePath 的路径（包括查询参数）
     if (router.isReady) {
       setReturnUrl(router.asPath);
     }
   }, [router.asPath, router.isReady]);
 
-  const loadDates = async () => {
+  const totalPages = useMemo(() => {
+    const count = Math.max(Math.ceil(total / pageSize), 1);
+    return count;
+  }, [total, pageSize]);
+
+  const loadSignals = async (override = {}) => {
+    setError("");
+    const dateValue = override.date ?? selectedDate;
+    const pageValue = override.page ?? page;
+    const strategyVersionValue = (override.strategyVersionId ?? strategyVersionId).trim();
+    const signalValue = override.signal ?? signal;
+    const portfolioTypeValue = override.portfolioType ?? portfolioType;
+
+    if (!dateValue) {
+      setItems([]);
+      setTotal(0);
+      setHasQuery(false);
+      return;
+    }
+
+    setHasQuery(true);
+    setLoading(true);
     try {
-      const res = await apiFetch(`/daily-signals/dates`);
+      const params = new URLSearchParams();
+      params.set("signal_date", dateValue);
+      params.set("portfolio_id", STRATEGY_PORTFOLIO_ID);
+      params.set("portfolio_type", portfolioTypeValue);
+      params.set("page", String(pageValue));
+      params.set("page_size", String(pageSize));
+      if (strategyVersionValue) params.set("strategy_version_id", strategyVersionValue);
+      if (signalValue) params.set("signal", signalValue);
+
+      const res = await apiFetch(`/strategy-signals?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(`加载失败: ${res.status}`);
+      }
+      const data = await res.json();
+      setItems(data.items || []);
+      setTotal(data.total || 0);
+    } catch (err) {
+      setError(err.message || "加载失败");
+      setItems([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadDates = async (overrideVersionId = "") => {
+    try {
+      const params = new URLSearchParams();
+      params.set("portfolio_id", STRATEGY_PORTFOLIO_ID);
+      const versionId = String(overrideVersionId || "").trim();
+      if (versionId) params.set("strategy_version_id", versionId);
+      const res = await apiFetch(`/strategy-signals/dates?${params.toString()}`);
       if (!res.ok) {
         return;
       }
@@ -95,76 +174,46 @@ export default function DailySignals() {
       const normalizedItems = rawItems
         .map((item) => normalizeDateValue(item))
         .filter((item) => item);
-      const items = [...new Set(normalizedItems)].sort((a, b) => String(b).localeCompare(String(a)));
-      setDates(items);
-      setDateSet(new Set(items));
-      if (items.length > 0 && !selectedDate) {
-        setSelectedDate(items[0]);
-        loadSignals(items[0], stockCode, strategy, signal);
-        const latest = parseYmd(items[0]);
-        if (latest) {
-          setCalendarMonth(new Date(latest.getFullYear(), latest.getMonth(), 1));
-        }
+      const nextDates = [...new Set(normalizedItems)].sort((a, b) => String(b).localeCompare(String(a)));
+      setDates(nextDates);
+      setDateSet(new Set(nextDates));
+
+      if (!nextDates.length) {
+        setSelectedDate("");
+        setItems([]);
+        setTotal(0);
+        return;
       }
+
+      const keepCurrent = selectedDate && nextDates.includes(selectedDate);
+      const nextSelectedDate = keepCurrent ? selectedDate : nextDates[0];
+      setSelectedDate(nextSelectedDate);
+      const latest = parseYmd(nextSelectedDate);
+      if (latest) {
+        setCalendarMonth(new Date(latest.getFullYear(), latest.getMonth(), 1));
+      }
+      setPage(1);
+      loadSignals({ date: nextSelectedDate, page: 1, strategyVersionId: versionId });
     } catch (err) {
       // ignore date load failures
     }
   };
 
-  const loadStrategies = async () => {
-    try {
-      const res = await apiFetch(`/daily-signals/strategies`);
-      if (!res.ok) {
-        return;
-      }
-      const data = await res.json();
-      setStrategies(data.items || []);
-    } catch (err) {
-      // ignore strategy load failures
-    }
-  };
-
-  const loadSignals = async (overrideDate, overrideStock, overrideStrategy, overrideSignal) => {
-    setError("");
-    const dateValue = overrideDate ?? selectedDate;
-    const stockValue = overrideStock ?? stockCode;
-    const strategyValue = overrideStrategy ?? strategy;
-    const signalValue = overrideSignal ?? signal;
-    if (!dateValue && !stockValue.trim() && !strategyValue.trim() && !signalValue.trim()) {
-      setItems([]);
-      setHasQuery(false);
-      return;
-    }
-    setHasQuery(true);
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (dateValue) params.set("trading_date", dateValue);
-      if (stockValue.trim()) params.set("stock_code", stockValue.trim());
-      if (strategyValue.trim()) params.set("strategy", strategyValue.trim());
-      if (signalValue.trim()) params.set("signal", signalValue.trim());
-      const res = await apiFetch(`/daily-signals?${params.toString()}`);
-      if (!res.ok) {
-        throw new Error(`加载失败: ${res.status}`);
-      }
-      const data = await res.json();
-      setItems(data.items || []);
-    } catch (err) {
-      setError(err.message || "加载失败");
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadDates();
-    loadStrategies();
+    loadDates("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    loadSignals();
+    setPage(1);
+    loadSignals({ page: 1 });
+  };
+
+  const handleVersionChange = (value) => {
+    setStrategyVersionId(value);
+    setPage(1);
+    loadDates(value);
   };
 
   const changeMonth = (delta) => {
@@ -182,16 +231,16 @@ export default function DailySignals() {
   };
 
   const handleYearChange = (event) => {
-    const year = parseInt(event.target.value);
-    if (!calendarMonth) return;
+    const year = parseInt(event.target.value, 10);
+    if (!calendarMonth || Number.isNaN(year)) return;
     const newMonth = new Date(calendarMonth);
     newMonth.setFullYear(year);
     setCalendarMonth(newMonth);
   };
 
   const handleMonthChange = (event) => {
-    const month = parseInt(event.target.value);
-    if (!calendarMonth) return;
+    const month = parseInt(event.target.value, 10);
+    if (!calendarMonth || Number.isNaN(month)) return;
     const newMonth = new Date(calendarMonth);
     newMonth.setMonth(month);
     setCalendarMonth(newMonth);
@@ -202,27 +251,17 @@ export default function DailySignals() {
       <header className="header">
         <div>
           <p className="eyebrow">Quant Platform</p>
-          <h1>每日信号</h1>
-          <p className="subtitle">查看策略产生的 BUY / SELL 信号记录</p>
+          <h1>Daily Signals</h1>
+          <p className="subtitle">策略级每日信号（新）</p>
         </div>
         <div className="calendar-panel">
           <div className="calendar-header">
             <span>信号日历</span>
             <div className="calendar-controls">
-              <button
-                type="button"
-                className="calendar-nav-btn"
-                onClick={() => changeYear(-1)}
-                title="上一年"
-              >
+              <button type="button" className="calendar-nav-btn" onClick={() => changeYear(-1)} title="上一年">
                 ««
               </button>
-              <button
-                type="button"
-                className="calendar-nav-btn"
-                onClick={() => changeMonth(-1)}
-                title="上一个月"
-              >
+              <button type="button" className="calendar-nav-btn" onClick={() => changeMonth(-1)} title="上一个月">
                 ‹
               </button>
               <select
@@ -250,20 +289,10 @@ export default function DailySignals() {
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                className="calendar-nav-btn"
-                onClick={() => changeMonth(1)}
-                title="下一个月"
-              >
+              <button type="button" className="calendar-nav-btn" onClick={() => changeMonth(1)} title="下一个月">
                 ›
               </button>
-              <button
-                type="button"
-                className="calendar-nav-btn"
-                onClick={() => changeYear(1)}
-                title="下一年"
-              >
+              <button type="button" className="calendar-nav-btn" onClick={() => changeYear(1)} title="下一年">
                 »»
               </button>
             </div>
@@ -274,16 +303,11 @@ export default function DailySignals() {
                 {label}
               </div>
             ))}
-            {(calendarMonth
-              ? buildCalendar(calendarMonth.getFullYear(), calendarMonth.getMonth())
-              : []
-            ).map((day, idx) => {
+            {(calendarMonth ? buildCalendar(calendarMonth.getFullYear(), calendarMonth.getMonth()) : []).map((day, idx) => {
               if (!day) {
                 return <div key={`empty-${idx}`} className="calendar-cell calendar-empty"></div>;
               }
-              const key = `${day.getFullYear()}${String(day.getMonth() + 1).padStart(2, "0")}${String(
-                day.getDate()
-              ).padStart(2, "0")}`;
+              const key = `${day.getFullYear()}${String(day.getMonth() + 1).padStart(2, "0")}${String(day.getDate()).padStart(2, "0")}`;
               const hasSignal = dateSet.has(key);
               const isSelected = selectedDate === key;
               return (
@@ -294,7 +318,8 @@ export default function DailySignals() {
                   onClick={() => {
                     if (hasSignal) {
                       setSelectedDate(key);
-                      loadSignals(key, stockCode, strategy, signal);
+                      setPage(1);
+                      loadSignals({ date: key, page: 1 });
                     }
                   }}
                   style={{ cursor: hasSignal ? "pointer" : "default" }}
@@ -309,9 +334,9 @@ export default function DailySignals() {
 
       <form className="filters" onSubmit={handleSubmit}>
         <div className="field">
-          <label htmlFor="dateSelect">交易日期</label>
+          <label htmlFor="signalDateSelect">信号日期</label>
           <select
-            id="dateSelect"
+            id="signalDateSelect"
             value={selectedDate}
             onChange={(event) => setSelectedDate(event.target.value)}
           >
@@ -323,43 +348,44 @@ export default function DailySignals() {
             ))}
           </select>
         </div>
+
         <div className="field">
-          <label htmlFor="stockCode">股票代码</label>
+          <label htmlFor="strategyVersionId">策略版本</label>
           <input
-            id="stockCode"
+            id="strategyVersionId"
             type="text"
-            placeholder="例如 000001.SZ"
-            value={stockCode}
-            onChange={(event) => setStockCode(event.target.value)}
+            placeholder="例如 alpha-xxxx:v3"
+            value={strategyVersionId}
+            onChange={(event) => handleVersionChange(event.target.value)}
           />
         </div>
+
         <div className="field">
-          <label htmlFor="strategy">策略名</label>
+          <label htmlFor="portfolioType">组合类型</label>
           <select
-            id="strategy"
-            value={strategy}
-            onChange={(event) => setStrategy(event.target.value)}
+            id="portfolioType"
+            value={portfolioType}
+            onChange={(event) => setPortfolioType(event.target.value)}
           >
-            <option value="">全部策略</option>
-            {strategies.map((item) => (
-              <option key={item} value={item}>
-                {item}
+            {PORTFOLIO_TYPE_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
               </option>
             ))}
           </select>
         </div>
+
         <div className="field">
-          <label htmlFor="signal">信号</label>
-          <select
-            id="signal"
-            value={signal}
-            onChange={(event) => setSignal(event.target.value)}
-          >
-            <option value="">全部</option>
-            <option value="BUY">BUY</option>
-            <option value="SELL">SELL</option>
+          <label htmlFor="signalType">信号</label>
+          <select id="signalType" value={signal} onChange={(event) => setSignal(event.target.value)}>
+            {SIGNAL_OPTIONS.map((item) => (
+              <option key={item.label} value={item.value}>
+                {item.label}
+              </option>
+            ))}
           </select>
         </div>
+
         <button className="primary" type="submit" disabled={loading}>
           {loading ? "查询中..." : "查询"}
         </button>
@@ -377,85 +403,51 @@ export default function DailySignals() {
           <table>
             <thead>
               <tr>
-                <th>股票代码</th>
-                <th>股票名称</th>
-                <th>交易日期</th>
-                <th>当日涨跌</th>
-                <th>策略名</th>
+                <th>信号日</th>
+                <th>计划成交日</th>
+                <th>策略版本</th>
+                <th>代码</th>
+                <th>名称</th>
                 <th>信号</th>
-                <th>板块</th>
-                <th>下一日涨跌</th>
-                <th>自选组</th>
+                <th>分数</th>
+                <th>排名</th>
+                <th>目标仓位</th>
+                <th>目标金额</th>
+                <th>市场状态</th>
+                <th>原因</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody className={loading ? "loading" : ""}>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="empty">
+                  <td colSpan="13" className="empty">
                     <div className="empty-state">
-                      <span className="empty-icon">📌</span>
-                      <p>
-                        {hasQuery
-                          ? "暂无符合条件的数据"
-                          : "请选择日期或股票代码进行查询"}
-                      </p>
+                      <p>{hasQuery ? "暂无符合条件的数据" : "请选择信号日期进行查询"}</p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 items.map((item, idx) => (
-                  <tr key={`${item.stock_code}-${item.strategy}-${idx}`}>
-                    <td className="code-cell">{item.stock_code}</td>
-                    <td>{item.name || "-"}</td>
-                    <td>{formatDate(item.trading_date)}</td>
+                  <tr key={`${item.signal_date}-${item.strategy_version_id}-${item.ts_code}-${idx}`}>
+                    <td>{formatDate(item.signal_date)}</td>
+                    <td>{formatDate(item.signal_trade_date)}</td>
+                    <td>{item.strategy_version_id || "-"}</td>
+                    <td className="code-cell">{item.ts_code || "-"}</td>
+                    <td>{item.stock_name || "-"}</td>
                     <td>
-                      {item.current_pct_chg === null || item.current_pct_chg === undefined ? (
-                        <span className="muted-text">-</span>
-                      ) : (
-                        <span className={`change-pill ${getChangeClass(item.current_pct_chg)}`}>
-                          {formatPct(item.current_pct_chg)}
-                        </span>
-                      )}
+                      <span className={signalBadgeClass(item.signal)}>{item.signal || "HOLD"}</span>
                     </td>
-                    <td>{item.strategy || "-"}</td>
-                    <td>
-                      <span className="badge">{item.signal || "BUY"}</span>
-                    </td>
-                    <td>{item.industry ? <span className="badge">{item.industry}</span> : "-"}</td>
-                    <td>
-                      {item.next_pct_chg === null || item.next_pct_chg === undefined ? (
-                        <span className="muted-text">暂无数据</span>
-                      ) : (
-                        <div className="next-day-info">
-                          <span className={`change-pill ${getChangeClass(item.next_pct_chg)}`}>
-                            {formatPct(item.next_pct_chg)}
-                          </span>
-                          {item.next_trade_date && (
-                            <span className="next-date-label">
-                              {formatDate(item.next_trade_date)}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      {item.groups && item.groups.length > 0 ? (
-                        <div className="group-tags">
-                          {item.groups.map((group) => (
-                            <span key={group} className="group-tag">
-                              {group}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
+                    <td>{formatScore(item.score)}</td>
+                    <td>{item.rank || "-"}</td>
+                    <td>{formatWeight(item.target_weight)}</td>
+                    <td>{formatNumber(item.target_amount)}</td>
+                    <td>{item.market_regime || "-"}</td>
+                    <td>{Array.isArray(item.reason_codes) ? item.reason_codes.join(", ") : "-"}</td>
                     <td>
                       <Link
                         className="link-button"
-                        href={`/stocks/${item.stock_code}?returnUrl=${encodeURIComponent(returnUrl)}`}
+                        href={`/stocks/${item.ts_code}?returnUrl=${encodeURIComponent(returnUrl)}`}
                       >
                         查看K线
                       </Link>
@@ -467,6 +459,36 @@ export default function DailySignals() {
           </table>
         )}
       </section>
+
+      <div className="pagination">
+        <span>
+          共 {total} 条，第 {page} / {totalPages} 页
+        </span>
+        <div className="pager-actions">
+          <button
+            type="button"
+            onClick={() => {
+              const nextPage = Math.max(page - 1, 1);
+              setPage(nextPage);
+              loadSignals({ page: nextPage });
+            }}
+            disabled={loading || page <= 1}
+          >
+            上一页
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const nextPage = Math.min(page + 1, totalPages);
+              setPage(nextPage);
+              loadSignals({ page: nextPage });
+            }}
+            disabled={loading || page >= totalPages}
+          >
+            下一页
+          </button>
+        </div>
+      </div>
     </main>
   );
 }

@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.api.stock_code import resolve_ts_code_input
 from app.services.stocks_service import (
     get_adj_factor,
     get_daily,
@@ -63,21 +64,30 @@ def sync_stocks(source: str | None = Query(default=None)) -> dict[str, int | str
 
 
 @router.get("/stocks/{ts_code}/candles")
-def get_candles(ts_code: str) -> dict[str, object]:
-    daily = get_daily(ts_code)
-    adj_factor = get_adj_factor(ts_code)
-    return {"ts_code": ts_code, "daily": daily, "adj_factor": adj_factor}
+def get_candles(
+    ts_code: str,
+    limit: int | None = Query(default=None, ge=1, le=2000),
+) -> dict[str, object]:
+    normalized = resolve_ts_code_input(ts_code, strict=False)
+    daily = get_daily(normalized, limit=limit)
+    adj_factor = get_adj_factor(normalized, limit=limit)
+    return {"ts_code": normalized, "daily": daily, "adj_factor": adj_factor}
 
 
 @router.get("/stocks/{ts_code}/basic")
 def get_basic(ts_code: str) -> dict[str, object]:
-    data = get_stock_basic_by_ts_code(ts_code)
+    normalized = resolve_ts_code_input(ts_code, strict=False)
+    data = get_stock_basic_by_ts_code(normalized)
     if not data:
         raise HTTPException(status_code=404, detail="Stock not found")
     return data
 
 
 @router.get("/stocks/{ts_code}/features")
-def get_features(ts_code: str) -> dict[str, object]:
-    indicators = get_indicators(ts_code)
-    return {"ts_code": ts_code, "indicators": indicators}
+def get_features(
+    ts_code: str,
+    limit: int | None = Query(default=None, ge=1, le=2000),
+) -> dict[str, object]:
+    normalized = resolve_ts_code_input(ts_code, strict=False)
+    indicators = get_indicators(normalized, limit=limit)
+    return {"ts_code": normalized, "indicators": indicators}

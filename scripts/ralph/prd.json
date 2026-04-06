@@ -1,0 +1,239 @@
+{
+  "project": "Freedom Quant Platform",
+  "branchName": "ralph/add-extra-api",
+  "description": "新增8个TuShare数据接口：筹码分布/胜率、CCASS持股、港股通持股、机构调研、东方财富资金流、港通资金流、指数技术因子。包括同步脚本、每日调度、REST API和MongoDB/Parquet存储。",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "TuShare client：新增8个fetch函数",
+      "description": "As a developer, I need TuShare fetch functions for all 8 new data sources so that sync scripts can call them.",
+      "acceptanceCriteria": [
+        "在 backend/app/data/tushare_client.py 末尾追加8个函数：fetch_cyq_perf, fetch_cyq_chips, fetch_ccass_hold, fetch_hk_hold, fetch_stk_surv, fetch_moneyflow_dc, fetch_moneyflow_hsgt, fetch_idx_factor_pro",
+        "每个函数内部使用已有的 _request_with_retry + _query_pro，签名与已有fetch函数风格一致",
+        "fetch_cyq_perf(ts_code='', trade_date='', start_date='', end_date='') — 按日期拉全市场，不传ts_code",
+        "fetch_cyq_chips(ts_code: str, start_date='', end_date='') — 按股票拉历史",
+        "fetch_ccass_hold(ts_code='', trade_date='', start_date='', end_date='')",
+        "fetch_hk_hold(ts_code='', trade_date='', start_date='', end_date='', exchange='') — exchange可为SH/SZ/HK",
+        "fetch_stk_surv(ts_code='', trade_date='', start_date='', end_date='')",
+        "fetch_moneyflow_dc(ts_code='', trade_date='', start_date='', end_date='') — 按日期拉全市场",
+        "fetch_moneyflow_hsgt(trade_date='', start_date='', end_date='')",
+        "fetch_idx_factor_pro(ts_code='', trade_date='', start_date='', end_date='') — 按指数拉历史",
+        "所有参数均为可选str，默认空字符串，与_query_pro的params dict对接时过滤掉空值",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "参考已有的 fetch_shenwan_daily / fetch_stk_factor_pro 的写法。_query_pro params中空字符串key需要过滤掉，避免TuShare报错。"
+    },
+    {
+      "id": "US-002",
+      "title": "MongoDB数据层：新增4个集合模块",
+      "description": "As a developer, I need MongoDB CRUD modules for ccass_hold, hk_hold, stk_surv, and moneyflow_hsgt so that sync scripts can persist data.",
+      "acceptanceCriteria": [
+        "新建 backend/app/data/mongo_ccass_hold.py：create_indexes(), upsert_batch(records: list[dict]), query_by_ts_code(ts_code, start_date, end_date), query_by_date_range(start_date, end_date)。索引：{ts_code:1, trade_date:-1} 和 {trade_date:1}。upsert key：(ts_code, trade_date)",
+        "新建 backend/app/data/mongo_hk_hold.py：同上接口。额外支持 query_by_exchange(exchange, start_date, end_date)。索引增加 {exchange:1, trade_date:-1}。upsert key：(ts_code, trade_date, exchange)",
+        "新建 backend/app/data/mongo_stk_surv.py：create_indexes(), upsert_batch(records), query_by_ts_code(ts_code, start_date, end_date)。索引：{ts_code:1, surv_date:-1} 和 {surv_date:-1}。upsert key：(ts_code, surv_date, rece_org)",
+        "新建 backend/app/data/mongo_moneyflow_hsgt.py：create_indexes(), upsert_batch(records), query_by_date_range(start_date, end_date)。索引：{trade_date:-1} unique。upsert key：(trade_date)",
+        "每个模块使用 from app.data.mongo import get_collection 获取集合，集合名与文件名去掉mongo_前缀一致（ccass_hold, hk_hold, stk_surv, moneyflow_hsgt）",
+        "upsert_batch 使用 UpdateOne(filter, {'$set': doc}, upsert=True) bulk_write，返回upserted count",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "参考 backend/app/data/mongo_shenwan_daily.py 的写法。get_collection 来自 app.data.mongo。"
+    },
+    {
+      "id": "US-003",
+      "title": "同步脚本：sync_cyq_perf.py（筹码胜率，Parquet）",
+      "description": "As an operator, I want to sync daily chip performance data for all stocks into Parquet so that the API can serve it.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_cyq_perf.py",
+        "支持CLI参数：--trade-date, --start-date, --end-date, --last-days, --sleep（默认2.0）",
+        "按交易日循环：每个trade_date调用fetch_cyq_perf(trade_date=date)拉取全市场数据（不传ts_code）",
+        "跳过非交易日（使用 load_open_dates 或 is_trading_day），记录skip日志",
+        "数据写入 Parquet：路径 data/features/cyq_perf/ts_code={ts_code}/year={year}/part-{uuid}.parquet",
+        "按年度flush缓冲：同年数据积攒后一次性写入（复用sync_stk_factor_pro.py的year_frames模式）",
+        "字段：ts_code, trade_date, his_low, his_high, cost_5pct, cost_15pct, cost_50pct, cost_85pct, cost_95pct, weight_avg, winner_rate",
+        "完成后调用 mark_sync_done(date, 'sync_cyq_perf')",
+        "使用tqdm进度条，set_postfix显示date/api_rows/stocks",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "严格复用 sync_stk_factor_pro.py 的结构：parse_args, resolve_dates, load_open_dates, transform, save, flush_year_buffer, main。SCRIPT_ROOT设置同sync_stk_factor_pro.py。"
+    },
+    {
+      "id": "US-004",
+      "title": "同步脚本：sync_moneyflow_dc.py（东方财富资金流，Parquet）",
+      "description": "As an operator, I want to sync daily DC money flow data for all stocks into Parquet.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_moneyflow_dc.py",
+        "结构与sync_cyq_perf.py完全一致，只替换API调用和字段",
+        "调用 fetch_moneyflow_dc(trade_date=date) 按日期拉全市场",
+        "历史起点注意：2023-09-11之前无数据，脚本应正常处理空DataFrame不报错",
+        "数据写入 Parquet：data/features/moneyflow_dc/ts_code={ts_code}/year={year}/part-{uuid}.parquet",
+        "字段：trade_date, ts_code, name, pct_change, close, net_amount, net_amount_rate, buy_elg_amount, buy_elg_amount_rate, buy_lg_amount, buy_lg_amount_rate, buy_md_amount, buy_md_amount_rate, buy_sm_amount, buy_sm_amount_rate",
+        "主键去重：(ts_code, trade_date)",
+        "完成后调用 mark_sync_done(date, 'sync_moneyflow_dc')",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "与sync_cyq_perf.py几乎完全相同，只是API名、字段列表、输出路径不同。"
+    },
+    {
+      "id": "US-005",
+      "title": "同步脚本：sync_moneyflow_hsgt.py（港通资金流，MongoDB）",
+      "description": "As an operator, I want to sync daily HSGT aggregate money flow into MongoDB.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_moneyflow_hsgt.py",
+        "支持CLI参数：--trade-date, --start-date, --end-date, --last-days, --sleep（默认0.5）",
+        "moneyflow_hsgt单次最多300条，按日期段直接拉取，可一次覆盖约1年",
+        "调用 fetch_moneyflow_hsgt(start_date=start, end_date=end) 拉取日期段数据",
+        "使用 mongo_moneyflow_hsgt.upsert_batch() 写入MongoDB",
+        "字段：trade_date, ggt_ss, ggt_sz, hgt, sgt, north_money, south_money",
+        "完成后调用 mark_sync_done(end_date, 'sync_moneyflow_hsgt')",
+        "脚本运行后 MongoDB moneyflow_hsgt 集合有数据可查",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "此接口无需按股票循环，直接按日期段批量拉取。参考sync_shenwan_daily.py的MongoDB写入模式。"
+    },
+    {
+      "id": "US-006",
+      "title": "同步脚本：sync_ccass_hold.py（CCASS持股，MongoDB）",
+      "description": "As an operator, I want to sync daily CCASS shareholding data into MongoDB.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_ccass_hold.py",
+        "支持CLI参数：--trade-date, --start-date, --end-date, --last-days, --sleep（默认2.0）",
+        "按交易日循环，每日调用 fetch_ccass_hold(trade_date=date) 拉全量（最多5000条/次）",
+        "使用 mongo_ccass_hold.upsert_batch() 写入MongoDB",
+        "字段：trade_date, ts_code, name, shareholding, hold_nums, hold_ratio",
+        "跳过非交易日，记录skip日志",
+        "完成后调用 mark_sync_done(date, 'sync_ccass_hold')",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "按日期拉取，一次最多5000条，覆盖所有在CCASS的A股标的。"
+    },
+    {
+      "id": "US-007",
+      "title": "同步脚本：sync_hk_hold.py（港股通持股，MongoDB）",
+      "description": "As an operator, I want to sync HK Stock Connect holding details into MongoDB.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_hk_hold.py",
+        "支持CLI参数：--trade-date, --start-date, --end-date, --last-days, --sleep（默认2.0）",
+        "按交易日循环，每日分3次调用：fetch_hk_hold(trade_date=date, exchange='SH'), fetch_hk_hold(trade_date=date, exchange='SZ'), fetch_hk_hold(trade_date=date, exchange='HK')",
+        "每次最多3800条，合并三个exchange结果后统一upsert",
+        "使用 mongo_hk_hold.upsert_batch() 写入MongoDB，upsert key：(ts_code, trade_date, exchange)",
+        "字段：code, trade_date, ts_code, name, vol, ratio, exchange",
+        "2024-08后SH/SZ返回空是正常情况，空DataFrame直接跳过不报错",
+        "跳过非交易日，完成后调用 mark_sync_done(date, 'sync_hk_hold')",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "2024-08后北向(SH/SZ)停止日频，只有南向(HK)有数据，脚本需优雅处理空响应。"
+    },
+    {
+      "id": "US-008",
+      "title": "同步脚本：sync_stk_surv.py（机构调研，MongoDB，每周五）",
+      "description": "As an operator, I want to sync institutional survey records into MongoDB on a weekly basis.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_stk_surv.py",
+        "支持CLI参数：--trade-date, --start-date, --end-date, --last-days, --sleep（默认1.5）",
+        "单次最多100条，按日期段循环分页：每次调用fetch_stk_surv(start_date, end_date)，若返回100条则继续向前分页",
+        "分页策略：以start_date向前滑动窗口（例如每次拉7天），直到返回结果小于100条",
+        "使用 mongo_stk_surv.upsert_batch() 写入MongoDB",
+        "字段：ts_code, name, surv_date, fund_visitors, rece_place, rece_mode, rece_org, org_type, comp_rece",
+        "完成后调用 mark_sync_done(end_date, 'sync_stk_surv')",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "stk_surv每次最多100条，需要分页。此脚本每周五在daily.sh中自动调用（拉最近7天），也支持手动指定日期范围做历史补录。"
+    },
+    {
+      "id": "US-009",
+      "title": "同步脚本：sync_cyq_chips.py（筹码分布，Parquet，按股票拉历史）",
+      "description": "As an operator, I want to sync full historical chip distribution data per stock into Parquet.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_cyq_chips.py",
+        "支持CLI参数：--trade-date, --start-date, --end-date, --last-days, --sleep（默认2.0），新增 --ts-codes（逗号分隔，可单独指定股票列表）",
+        "历史模式（无--trade-date时）：从MongoDB stock_basic获取全部ts_code列表，逐只股票调用 fetch_cyq_chips(ts_code=code, start_date=start, end_date=end)",
+        "每只股票单次最多2000条（含多日多价位），若返回2000条则说明需要按年分段拉取",
+        "数据写入 Parquet：data/features/cyq_chips/ts_code={ts_code}/year={year}/part-{uuid}.parquet",
+        "字段：ts_code, trade_date, price, percent",
+        "主键去重：(ts_code, trade_date, price)",
+        "使用tqdm进度条显示股票处理进度",
+        "单只股票失败时记录error日志并继续（不中断整批）",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "cyq_chips数据量大（预计15-35GB全量），按ts_code逐只拉取是必要的（按日期批量拉会超出2000条限制）。历史全量同步可能需要数天，脚本需支持断点续传（已存在的ts_code/year分区可跳过）。"
+    },
+    {
+      "id": "US-010",
+      "title": "同步脚本：sync_idx_factor_pro.py（指数技术因子，Parquet，按指数拉历史）",
+      "description": "As an operator, I want to sync index technical factor data for all indices into Parquet.",
+      "acceptanceCriteria": [
+        "新建 backend/scripts/daily/sync_idx_factor_pro.py",
+        "支持CLI参数：--trade-date, --start-date, --end-date, --last-days, --sleep（默认2.0）",
+        "指数列表来源：从MongoDB market_index集合读取宽基指数列表 + 从shenwan_industry读取申万指数列表（level 1/2/3）+ 预定义中信行业指数列表（硬编码常见中信指数代码）",
+        "按指数循环：每只指数调用 fetch_idx_factor_pro(ts_code=code, start_date=start, end_date=end)，单次8000条足够覆盖全历史",
+        "数据写入 Parquet：data/features/idx_factor_pro/ts_code={ts_code}/year={year}/part-{uuid}.parquet",
+        "字段（关键子集）：ts_code, trade_date, open, high, low, close, pre_close, change, pct_change, vol, amount, macd_bfq, macd_dea_bfq, macd_dif_bfq, kdj_k_bfq, kdj_d_bfq, kdj_j_bfq, rsi_6_bfq, rsi_12_bfq, boll_upper_bfq, boll_mid_bfq, boll_lower_bfq, ma5_bfq, ma10_bfq, ma20_bfq, ma30_bfq, ma60_bfq, ma90_bfq, ma250_bfq",
+        "主键去重：(ts_code, trade_date)",
+        "单只指数失败时记录error日志并继续",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "中信行业指数代码参考：399001.SZ系列和000300.SH等主要指数。如果不确定中信指数列表，可从MongoDB的citic_sector_daily集合中提取distinct ts_code。"
+    },
+    {
+      "id": "US-011",
+      "title": "API：market_data_service + market_data路由 + 路由注册",
+      "description": "As an external service, I want REST API endpoints to query all 8 new datasets so that I can consume market data.",
+      "acceptanceCriteria": [
+        "新建 backend/app/services/market_data_service.py，包含8个查询函数：get_cyq_perf, get_cyq_chips, get_ccass_hold, get_hk_hold, get_stk_surv, get_moneyflow_dc, get_moneyflow_hsgt, get_index_factors",
+        "Parquet查询（cyq_perf, cyq_chips, moneyflow_dc, idx_factor_pro）使用duckdb直连 settings.duckdb_path，Hive分区路径过滤ts_code和year，WHERE trade_date BETWEEN start_date AND end_date",
+        "MongoDB查询（ccass_hold, hk_hold, stk_surv, moneyflow_hsgt）调用对应mongo_*.py模块的query函数",
+        "所有查询函数返回 list[dict]，按trade_date降序排序",
+        "新建 backend/app/api/routes/market_data.py，包含以下端点（start_date和end_date均为 Query(...) 必填）：GET /api/chip-perf/{ts_code}，GET /api/chip-distribution/{ts_code}，GET /api/ccass-hold/{ts_code}，GET /api/hk-hold/{ts_code}（可选query param: exchange），GET /api/institution-survey/{ts_code}，GET /api/moneyflow-dc/{ts_code}，GET /api/moneyflow-hsgt，GET /api/index-factors/{ts_code}",
+        "所有带{ts_code}的端点通过 resolve_ts_code_input() 处理，支持'600118'格式输入",
+        "在 backend/app/api/routes/__init__.py 导入 market_data_router",
+        "在 backend/app/api/routers.py 用 dependencies=[Depends(get_current_user)] 注册 market_data_router，tag为'market_data'",
+        "curl http://localhost:9000/api/chip-perf/000001.SZ?start_date=20250101&end_date=20250301 返回200（需要Bearer token）",
+        "curl http://localhost:9000/api/chip-perf/000001?start_date=20250101&end_date=20250301 同样返回200（600118格式兼容）",
+        "缺少start_date时返回422",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "路由注册模式参考routers.py中已有的写法：router.include_router(market_data_router, tags=['market_data'], dependencies=[Depends(get_current_user)])。Parquet查询参考已有的duckdb_client或直接使用duckdb.connect(settings.duckdb_path)。"
+    },
+    {
+      "id": "US-012",
+      "title": "daily.sh集成：新增步骤8-12",
+      "description": "As an operator, I want the new sync scripts to run automatically every trading day (and weekly for stk_surv/ccass/hk_hold).",
+      "acceptanceCriteria": [
+        "更新 backend/scripts/daily/daily.sh，TOTAL_STEPS从7改为12",
+        "新增 Step 8：每日运行 sync_cyq_perf.py --start-date ${START_DATE} --end-date ${END_DATE}",
+        "新增 Step 9：每日运行 sync_moneyflow_dc.py --start-date ${START_DATE} --end-date ${END_DATE}",
+        "新增 Step 10：每日运行 sync_moneyflow_hsgt.py --start-date ${START_DATE} --end-date ${END_DATE}",
+        "新增 Step 11（仅周五）：sync_ccass_hold.py + sync_hk_hold.py，非周五skip，与Step 4的周五判断逻辑一致（使用已有TARGET_WEEKDAY变量）",
+        "新增 Step 12（仅周五）：sync_stk_surv.py --last-days 7，非周五skip",
+        "sync_cyq_chips.py 和 sync_idx_factor_pro.py 不加入daily.sh（仅手动全量同步用）",
+        "运行 bash backend/scripts/daily/daily.sh --start-date 20250301 --end-date 20250301 能正常执行到Step 12无报错",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "cyq_chips和idx_factor_pro因为是按股票/指数循环，每日运行耗时过长，不加入daily.sh。只在历史全量同步时手动运行。TARGET_WEEKDAY变量在daily.sh中已经存在，Step 11/12直接复用即可。"
+    }
+  ]
+}

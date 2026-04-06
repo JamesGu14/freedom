@@ -8,13 +8,17 @@ Crash-safe: writes to temp file, renames to final, then deletes old parts.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import logging
+import sys
 import uuid
 from pathlib import Path
 
 import duckdb
+from tqdm import tqdm
 
 from app.core.config import settings
+from app.data.mongo_data_sync_date import mark_sync_done
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help="Limit to a single year (e.g. 2024)",
+    )
+    parser.add_argument(
+        "--sync-date",
+        type=str,
+        default="",
+        help="YYYYMMDD run date to record in data_sync_date (default: today)",
     )
     return parser.parse_args()
 
@@ -168,12 +178,30 @@ def compact_dataset(
     logger.info("[%s] compacting partitions=%s", dataset, len(partitions))
     total_removed = 0
     total_written = 0
-    for partition_dir in partitions:
-        removed, written = compact_partition(partition_dir)
-        if removed:
-            logger.info("  %s removed=%s", partition_dir.relative_to(base_dir), removed)
-        total_removed += removed
-        total_written += written
+    progress_bar_enabled = sys.stderr.isatty()
+    progress_log_every = max(1, len(partitions) // 20)
+    with tqdm(
+        partitions,
+        desc=f"[{dataset}] compact",
+        unit="partition",
+        dynamic_ncols=True,
+        disable=not progress_bar_enabled,
+    ) as progress:
+        for index, partition_dir in enumerate(progress, start=1):
+            removed, written = compact_partition(partition_dir)
+            total_removed += removed
+            total_written += written
+            if progress_bar_enabled:
+                progress.set_postfix(removed=total_removed, compacted=total_written, refresh=False)
+            elif index % progress_log_every == 0 or index == len(partitions):
+                logger.info(
+                    "[%s] progress %s/%s removed=%s compacted=%s",
+                    dataset,
+                    index,
+                    len(partitions),
+                    total_removed,
+                    total_written,
+                )
 
     logger.info("[%s] done: removed=%s compacted=%s", dataset, total_removed, total_written)
     return total_removed, total_written
@@ -198,6 +226,10 @@ def main() -> None:
         grand_written += written
 
     logger.info("[total] removed=%s compacted=%s", grand_removed, grand_written)
+
+    sync_date = (args.sync_date or dt.datetime.now().strftime("%Y%m%d")).strip().replace("-", "")
+    if len(sync_date) == 8 and sync_date.isdigit():
+        mark_sync_done(sync_date, "compact_parquet")
 
 
 if __name__ == "__main__":

@@ -10,8 +10,16 @@ class LoginRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
-    expires_in: int
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str | None = None
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = None
 
 
 class MeResponse(BaseModel):
@@ -19,6 +27,7 @@ class MeResponse(BaseModel):
     username: str
     display_name: str | None = None
     status: str
+    roles: list[str] = Field(default_factory=list)
     created_at: object | None = None
     updated_at: object | None = None
     last_login_at: object | None = None

@@ -221,6 +221,81 @@ def fetch_index_dailybasic(
     return df
 
 
+def fetch_index_basic(
+    *,
+    market: str = "",
+    publisher: str = "",
+    category: str = "",
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "market": market,
+            "publisher": publisher,
+            "category": category,
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("index_basic", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_index_daily(
+    *,
+    ts_code: str,
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    if not ts_code:
+        raise ValueError("ts_code is required")
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "trade_date": trade_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("index_daily", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_index_weight(
+    *,
+    index_code: str,
+    trade_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    if not index_code:
+        raise ValueError("index_code is required")
+    df = _request_with_retry(
+        lambda: _query_pro(
+            "index_weight",
+            params={
+                "index_code": index_code,
+                "trade_date": trade_date or "",
+                "start_date": start_date or "",
+                "end_date": end_date or "",
+            },
+        )
+    )
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
 def fetch_idx_factor_pro(
     *,
     ts_code: str | None = None,
@@ -263,6 +338,450 @@ def fetch_stk_factor_pro(
             params={"trade_date": trade_date},
         )
     )
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_cyq_perf(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("cyq_perf", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_cyq_chips(
+    ts_code: str,
+    *,
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params: dict[str, object] = {"ts_code": ts_code}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    df = _request_with_retry(lambda: _query_pro("cyq_chips", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_ccass_hold(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("ccass_hold", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_hk_hold(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    exchange: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date, "exchange": exchange}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("hk_hold", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_stk_surv(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("stk_surv", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_margin(
+    *,
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    exchange_id: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "trade_date": trade_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "exchange_id": exchange_id,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("margin", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_margin_detail(
+    *,
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    ts_code: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "trade_date": trade_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "ts_code": ts_code,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("margin_detail", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_moneyflow_dc(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"ts_code": ts_code, "trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("moneyflow_dc", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_moneyflow_hsgt(
+    *,
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"trade_date": trade_date, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("moneyflow_hsgt", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_adj_factor(
+    *,
+    trade_date: str = "",
+    ts_code: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> pd.DataFrame:
+    params = {k: v for k, v in {"trade_date": trade_date, "ts_code": ts_code, "start_date": start_date, "end_date": end_date}.items() if v}
+    df = _request_with_retry(lambda: _query_pro("adj_factor", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_suspend_d(
+    *,
+    ts_code: str = "",
+    trade_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    suspend_type: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "trade_date": trade_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "suspend_type": suspend_type,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("suspend_d", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_income(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    report_type: str = "",
+    comp_type: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    api_name = "income_vip" if not ts_code else "income"
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "report_type": report_type,
+            "comp_type": comp_type,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro(api_name, params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_balancesheet(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    f_ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    report_type: str = "",
+    comp_type: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    api_name = "balancesheet_vip" if not ts_code else "balancesheet"
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "f_ann_date": f_ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "report_type": report_type,
+            "comp_type": comp_type,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro(api_name, params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_cashflow(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    f_ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    report_type: str = "",
+    comp_type: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    api_name = "cashflow_vip" if not ts_code else "cashflow"
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "f_ann_date": f_ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "report_type": report_type,
+            "comp_type": comp_type,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro(api_name, params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_fina_indicator(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    api_name = "fina_indicator_vip" if not ts_code else "fina_indicator"
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro(api_name, params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_dividend(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    end_date: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "end_date": end_date,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("dividend", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_stk_holdernumber(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("stk_holdernumber", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_top10_holders(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("top10_holders", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_top10_floatholders(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("top10_floatholders", params=params))
     if df is None:
         return pd.DataFrame()
     return df

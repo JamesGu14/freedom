@@ -19,6 +19,7 @@ from app.data.duckdb_store import (
     upsert_daily_basic,
     upsert_daily_limit,
 )
+from app.core.config import settings
 from app.data.mongo_stock import list_stock_codes
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def main() -> None:
     )
     args = parse_args()
 
-    token = "e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e"
+    token = settings.tushare_token
     if not token:
         raise SystemExit("TUSHARE_TOKEN is required")
 
