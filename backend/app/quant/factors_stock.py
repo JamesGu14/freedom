@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
+
+
+DEFAULT_FACTOR_WEIGHTS: dict[str, float] = {
+    "stock_trend": 0.35,
+    "sector_strength": 0.25,
+    "value_quality": 0.25,
+    "liquidity_stability": 0.15,
+}
 
 
 def _clip_series(series: pd.Series, low: float = 0.0, high: float = 100.0) -> pd.Series:
@@ -59,17 +69,43 @@ def _liquidity_stability_score(frame: pd.DataFrame) -> pd.Series:
     return _clip_series(amount_score * 0.35 + turnover_score * 0.25 + atr_score * 0.25 + activity * 0.15)
 
 
-def build_stock_factor_scores(frame: pd.DataFrame) -> pd.DataFrame:
+def _resolve_factor_weights(params: dict[str, Any] | None) -> dict[str, float]:
+    if not isinstance(params, dict):
+        return dict(DEFAULT_FACTOR_WEIGHTS)
+    value = params.get("factor_weights")
+    if not isinstance(value, dict):
+        return dict(DEFAULT_FACTOR_WEIGHTS)
+
+    parsed: dict[str, float] = {}
+    for key, default_weight in DEFAULT_FACTOR_WEIGHTS.items():
+        raw = value.get(key, default_weight)
+        try:
+            number = float(raw)
+        except (TypeError, ValueError):
+            number = default_weight
+        parsed[key] = max(number, 0.0)
+
+    total = sum(parsed.values())
+    if total <= 0:
+        return dict(DEFAULT_FACTOR_WEIGHTS)
+    return {key: weight / total for key, weight in parsed.items()}
+
+
+def build_stock_factor_scores(
+    frame: pd.DataFrame,
+    params: dict[str, Any] | None = None,
+) -> pd.DataFrame:
     if frame is None or frame.empty:
         return pd.DataFrame()
     data = frame.copy()
     data["stock_trend"] = _trend_score(data)
     data["value_quality"] = _value_quality_score(data)
     data["liquidity_stability"] = _liquidity_stability_score(data)
+    weights = _resolve_factor_weights(params)
     data["total_score"] = (
-        data["stock_trend"] * 0.35
-        + data.get("sector_strength", 50.0) * 0.25
-        + data["value_quality"] * 0.25
-        + data["liquidity_stability"] * 0.15
+        data["stock_trend"] * weights["stock_trend"]
+        + data.get("sector_strength", 50.0) * weights["sector_strength"]
+        + data["value_quality"] * weights["value_quality"]
+        + data["liquidity_stability"] * weights["liquidity_stability"]
     ).clip(lower=0.0, upper=100.0)
     return data

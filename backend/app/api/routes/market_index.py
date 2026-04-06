@@ -59,17 +59,19 @@ def get_market_series(
 @router.get("/market-index/factors")
 def get_market_factors(
     ts_code: str = Query(...),
+    source: str = Query(default="market"),
     start_date: str | None = Query(default=None),
     end_date: str | None = Query(default=None),
     limit: int = Query(default=120, ge=1, le=2000),
 ) -> dict[str, object]:
     rows = get_market_index_factors(
         ts_code=ts_code.upper(),
+        source=source,
         start_date=start_date,
         end_date=end_date,
         limit=limit,
     )
-    return {"ts_code": ts_code.upper(), "items": rows, "total": len(rows)}
+    return {"ts_code": ts_code.upper(), "source": source, "items": rows, "total": len(rows)}
 
 
 @router.get("/market-index/chart")

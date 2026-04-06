@@ -17,6 +17,7 @@ sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings  # noqa: E402
 from app.data.mongo import get_collection  # noqa: E402
+from app.data.mongo_data_sync_date import mark_sync_done  # noqa: E402
 from app.data.mongo_citic import (  # noqa: E402
     list_citic_industry,
     upsert_citic_industry,
@@ -645,6 +646,7 @@ def main() -> None:
     total_factor = 0
     skipped_non_trading = 0
     total_factor_counts = {"market": 0, "sw": 0, "ci": 0}
+    synced_dates: list[str] = []
 
     progress = tqdm(date_list, total=len(date_list), desc="sync_zhishu_data", unit="day", dynamic_ncols=True)
     for idx, trade_date in enumerate(progress, start=1):
@@ -653,6 +655,7 @@ def main() -> None:
             progress.set_postfix(date=trade_date, status="skip")
             continue
 
+        synced_dates.append(trade_date)
         day_start = time.time()
         citic_count: int | str = "-"
         market_count: int | str = "-"
@@ -718,6 +721,8 @@ def main() -> None:
             logger.warning("[%s/%s] %s errors: %s", idx, len(date_list), trade_date, "; ".join(errors))
 
     total_elapsed = time.time() - script_start
+    for d in synced_dates:
+        mark_sync_done(d, "sync_zhishu_data")
     logger.info(
         "sync totals: citic_daily=%s market_dailybasic=%s idx_factor=%s (market=%s sw=%s ci=%s) skipped_non_trading=%s",
         total_citic,

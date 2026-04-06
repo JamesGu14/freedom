@@ -5,7 +5,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_current_user
+from app.api.stock_code import resolve_ts_code_input
+from app.api.deps import get_current_user, get_shared_business_username
 from app.services.backtest_service import (
     compare_backtests,
     create_backtest_run_meta,
@@ -43,7 +44,7 @@ def create_backtest(
     payload: BacktestCreateRequest,
     current_user: dict[str, object] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    username = str(current_user.get("username") or "")
+    del current_user
     try:
         item = create_backtest_run_meta(
             strategy_id=payload.strategy_id,
@@ -52,7 +53,7 @@ def create_backtest(
             end_date=payload.end_date,
             run_type=payload.run_type,
             initial_capital=payload.initial_capital,
-            created_by=username,
+            created_by=get_shared_business_username(),
             run_id=payload.run_id,
         )
     except ValueError as exc:
@@ -138,15 +139,23 @@ def list_backtest_trade_items(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     ts_code: str | None = Query(default=None),
+    trade_date: str | None = Query(default=None),
 ) -> dict[str, Any]:
     run = get_backtest_detail(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
+    normalized_trade_date: str | None = None
+    if trade_date:
+        normalized_trade_date = str(trade_date).strip().replace("-", "")
+        if len(normalized_trade_date) != 8 or not normalized_trade_date.isdigit():
+            raise HTTPException(status_code=400, detail="invalid trade_date, use YYYYMMDD or YYYY-MM-DD")
+    normalized_ts_code = resolve_ts_code_input(ts_code, strict=False) if ts_code else None
     items, total = get_backtest_trades(
         run_id=run_id,
         page=page,
         page_size=page_size,
-        ts_code=ts_code,
+        ts_code=normalized_ts_code,
+        trade_date=normalized_trade_date,
     )
     return {
         "run_id": run_id,
@@ -166,8 +175,9 @@ def list_backtest_trade_items_by_code(
     run = get_backtest_detail(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
-    items = get_backtest_trades_by_code(run_id=run_id, ts_code=ts_code, limit=limit)
-    return {"run_id": run_id, "items": items, "total": len(items)}
+    normalized = resolve_ts_code_input(ts_code, strict=False)
+    items = get_backtest_trades_by_code(run_id=run_id, ts_code=normalized, limit=limit)
+    return {"run_id": run_id, "ts_code": normalized, "items": items, "total": len(items)}
 
 
 @router.get("/backtests/{run_id}/positions")

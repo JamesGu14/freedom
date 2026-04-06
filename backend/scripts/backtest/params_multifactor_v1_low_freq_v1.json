@@ -1,0 +1,47 @@
+{
+  "name": "multifactor_v1_low_freq_v1",
+  "strategy_key": "multifactor_v1",
+  "description": "成分映射优先 + 日内交易节流 + 再入场冷却，目标是在控制频次下稳定收益。",
+  "params_snapshot": {
+    "buy_threshold": 78.0,
+    "sell_threshold": 50.0,
+    "stop_loss_pct": 0.08,
+    "trail_stop_pct": 0.1,
+    "max_hold_days": 60,
+    "min_avg_amount_20d": 25000.0,
+    "max_positions": 5,
+    "slot_weight": 0.2,
+    "market_exposure": {
+      "risk_on": 1.0,
+      "neutral": 0.7,
+      "risk_off": 0.4
+    },
+    "rotate_score_delta": 12.0,
+    "rotate_profit_ceiling": 0.01,
+    "min_hold_days_before_rotate": 7,
+    "sector_max": 0.4,
+    "sell_confirm_days": 2,
+    "signal_store_topk": 100,
+    "score_direction": "reverse",
+    "enable_buy_tech_filter": true,
+    "allowed_boards": [
+      "sh_main",
+      "sz_main",
+      "star",
+      "gem"
+    ],
+    "score_ceiling": 100.0,
+    "slot_min_scale": 0.6,
+    "min_gross_exposure": 0.0,
+    "use_member_sector_mapping": true,
+    "sector_source_weights": {
+      "sw": 0.65,
+      "ci": 0.35
+    },
+    "max_daily_buy_count": 2,
+    "max_daily_sell_count": 4,
+    "max_daily_trade_count": 4,
+    "max_daily_rotate_count": 1,
+    "reentry_cooldown_days": 10
+  }
+}

@@ -22,11 +22,7 @@ cd backend
 pip install -e .
 uvicorn app.main:app --reload --host 0.0.0.0 --port 9000 --reload-dir app
 
-# Scheduler - runs daily jobs at 18:00 Shanghai time (Terminal 2)
-cd backend
-python scripts/scheduler.py
-
-# Frontend (Terminal 3)
+# Frontend (Terminal 2)
 cd frontend
 npm run dev
 # Opens http://localhost:3000/freedom
@@ -74,7 +70,7 @@ python backend/scripts/daily/compact_daily_parquet.py --ts-code 000001.SZ --year
 | Cache | Redis 7 (optional) |
 | Frontend | Next.js 14, React 18, ECharts 5, port 3000 |
 | Reverse Proxy | Nginx (basePath=/freedom) |
-| Scheduler | APScheduler (daily 18:00 Asia/Shanghai) |
+| Scheduler | Shell scripts + Airflow |
 
 ### Data Flow
 
@@ -95,7 +91,6 @@ backend/
 │   ├── data/                # DuckDB, MongoDB, TuShare clients
 │   └── core/config.py       # Pydantic settings
 ├── scripts/
-│   ├── scheduler.py         # APScheduler setup
 │   ├── daily/               # Daily jobs (pull_daily_history, calculate_signal)
 │   ├── one_time/            # One-time maintenance tasks
 │   └── strategy/            # Signal strategies (MaCross, EarlyBreakout, DailySignal)

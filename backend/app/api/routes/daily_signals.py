@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
+from app.api.stock_code import resolve_ts_code_input
 from app.data.mongo import get_collection
 from app.data.mongo_groups import list_group_names_by_stock_codes
 from app.data.mongo_stock import get_stock_basic_map
@@ -44,7 +45,7 @@ def list_daily_signals(
     if trading_date:
         query["trading_date"] = trading_date
     if stock_code:
-        query["stock_code"] = stock_code
+        query["stock_code"] = resolve_ts_code_input(stock_code, strict=False)
     if strategy:
         query["strategy"] = strategy
     if signal:

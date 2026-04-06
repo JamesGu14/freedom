@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: Path = PROJECT_ROOT / "logs"
 
-    tushare_token: str | None = "e14d179a9b5acda0028ea672ecb535d9541402ba5e15e31687a4439e"
+    tushare_token: str | None = None
     data_dir: Path = PROJECT_ROOT / "data"
     duckdb_path: Path = PROJECT_ROOT / "data" / "quant.duckdb"
     redis_url: str | None = None
@@ -26,14 +26,28 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expires_minutes: int = 120
     refresh_token_expires_days: int = 7
+    internal_api_token: str = ""
+    auth_login_url: str = ""
+    auth_refresh_url: str = ""
+    auth_logout_url: str = ""
+    auth_verify_url: str = ""
+    auth_verify_timeout_seconds: float = 5.0
     auth_cookie_domain: str | None = None
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
+    shared_business_username: str = "james"
 
     admin_username: str = "james"
     admin_password: str = "james1031"
 
     cors_allow_origins: str = "http://localhost:3000"
+
+    ai_runner_base_url: str = "http://host.docker.internal:18600"
+    ai_runner_token: str = ""
+    ai_runner_timeout_seconds: int = 90
+    ai_runner_max_retries: int = 2
+
+    feishu_webhook_url: str | None = None
 
 
 settings = Settings()

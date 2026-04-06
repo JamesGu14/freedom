@@ -590,25 +590,12 @@ GET /api/sector-ranking/avg
 
 ## 6. 调度任务配置
 
-### 6.1 新增调度任务
+### 6.1 调度接入说明
 
-**位置**: `backend/scripts/scheduler.py`
+该能力的日常同步应接入：
 
-新增一个调度任务：
-
-```python
-# 同步申万行业日行情（每日 18:30 执行，市场收盘后）
-scheduler.add_job(
-    sync_shenwan_daily,
-    'cron',
-    hour=18,
-    minute=30,
-    timezone='Asia/Shanghai',
-    id='sync_shenwan_daily',
-    name='同步申万行业日行情',
-    replace_existing=True,
-)
-```
+- `backend/scripts/daily/daily.sh`
+- 或后续统一迁入 Airflow
 
 **注**：5日平均排名无需单独计算任务，API 查询时从 `shenwan_daily` 动态聚合计算。
 
@@ -664,8 +651,7 @@ scheduler.add_job(
 
 ### 阶段 5: 调度任务配置
 
-- [ ] 更新 `backend/scripts/scheduler.py`
-  - [ ] 新增 sync_shenwan_daily 任务（18:30）
+- [ ] 将 `sync_shenwan_daily` 挂入统一脚本链路或 Airflow 编排
 
 ### 阶段 6: 测试与验收
 

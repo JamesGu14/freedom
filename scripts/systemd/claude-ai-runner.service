@@ -1,0 +1,19 @@
+[Unit]
+Description=Freedom Claude AI Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=james
+WorkingDirectory=/home/james/projects/freedom
+ExecStart=/home/james/miniconda3/envs/freedom/bin/python /home/james/projects/freedom/scripts/ai_runner_claude.py --host 0.0.0.0 --port 18600
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

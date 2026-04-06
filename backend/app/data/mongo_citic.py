@@ -42,6 +42,10 @@ def _ensure_citic_member_indexes() -> None:
         [("level", ASCENDING), ("is_new", ASCENDING)],
         name="idx_level_isnew",
     )
+    collection.create_index(
+        [("in_date", ASCENDING), ("out_date", ASCENDING), ("cons_code", ASCENDING)],
+        name="idx_active_window_conscode",
+    )
 
 
 def get_citic_industry_collection():
@@ -168,4 +172,3 @@ def list_citic_members(
         .limit(page_size)
     )
     return list(cursor), int(total)
-

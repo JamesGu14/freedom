@@ -69,12 +69,42 @@ const NAV = [
     ),
   },
   {
+    href: "/daily-signals-legacy",
+    label: "Daily Signals(旧)",
+    icon: (
+      <Ico>
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </Ico>
+    ),
+  },
+  {
+    href: "/agent-freedom",
+    label: "财神爷",
+    icon: (
+      <Ico>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <circle cx="16" cy="15" r="1.5" />
+      </Ico>
+    ),
+  },
+  {
     href: "/market-index",
     label: "大盘指数",
     icon: (
       <Ico>
         <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
         <polyline points="17 6 23 6 23 12" />
+      </Ico>
+    ),
+  },
+  {
+    href: "/research",
+    label: "研究中心",
+    icon: (
+      <Ico>
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
       </Ico>
     ),
   },
@@ -113,11 +143,9 @@ const NAV = [
 /* ── App Shell with sidebar ── */
 function AppShell({ Component, pageProps }) {
   const router = useRouter();
-  const { token, username, initialized, logout } = useAuth();
+  const { token, username, roles, initialized, logout } = useAuth();
   const isLogin = router.pathname === "/login";
-  const isAdmin = ["admin", "james"].includes(
-    String(username || "").trim().toLowerCase()
-  );
+  const isAdmin = Array.isArray(roles) && roles.some((role) => String(role).trim().toLowerCase() === "admin");
 
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -214,6 +242,20 @@ function AppShell({ Component, pageProps }) {
             {isAdmin && (
               <>
                 <div className="sidebar__divider" />
+                <Link
+                  href="/data-sync"
+                  className={`sidebar__item${isActive("/data-sync") ? " sidebar__item--active" : ""}`}
+                  title={collapsed ? "数据同步" : undefined}
+                >
+                  <span className="sidebar__icon">
+                    <Ico>
+                      <path d="M21 12a9 9 0 1 1-3.2-6.9" />
+                      <polyline points="21 3 21 9 15 9" />
+                      <path d="M3 12a9 9 0 0 0 15.5 6.4" />
+                    </Ico>
+                  </span>
+                  <span className="sidebar__label">数据同步</span>
+                </Link>
                 <Link
                   href="/users"
                   className={`sidebar__item${isActive("/users") ? " sidebar__item--active" : ""}`}

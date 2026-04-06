@@ -15,7 +15,8 @@ from app.data.mongo_backtest import (
     set_strategy_status,
     update_strategy_definition,
 )
-from app.quant.registry import list_registered_strategies
+from app.quant.params_registry import normalize_strategy_key, validate_and_normalize_params
+from app.quant.registry import is_registered_strategy, list_registered_strategies
 
 
 def list_strategies(
@@ -43,15 +44,20 @@ def get_strategy(strategy_id: str) -> dict[str, Any] | None:
 def create_strategy(
     *,
     name: str,
+    strategy_key: str,
     description: str,
     owner: str,
     created_by: str,
 ) -> dict[str, Any]:
     if not name or not name.strip():
         raise ValueError("name is required")
+    key = normalize_strategy_key(strategy_key)
+    if not is_registered_strategy(key):
+        raise ValueError(f"unsupported strategy_key: {strategy_key}")
     try:
         return create_strategy_definition(
             name=name.strip(),
+            strategy_key=key,
             description=description or "",
             owner=owner or created_by or "",
             created_by=created_by or "",
@@ -107,10 +113,17 @@ def create_version(
     payload = params_snapshot or {}
     if not isinstance(payload, dict):
         raise ValueError("params_snapshot must be object")
+    strategy_key = normalize_strategy_key(strategy.get("strategy_key"))
+    payload_key = str(payload.get("strategy_key") or "").strip()
+    if payload_key and normalize_strategy_key(payload_key) != strategy_key:
+        raise ValueError("params_snapshot.strategy_key does not match strategy definition strategy_key")
+    normalized_params, params_schema_version = validate_and_normalize_params(strategy_key, payload)
     try:
         return create_strategy_version(
             strategy_id=strategy_id,
-            params_snapshot=payload,
+            strategy_key=strategy_key,
+            params_snapshot=normalized_params,
+            params_schema_version=params_schema_version,
             code_ref=code_ref or "",
             change_log=change_log or "",
             created_by=created_by or "",
@@ -122,4 +135,3 @@ def create_version(
 
 def list_available_engine_strategies() -> list[dict[str, str]]:
     return list_registered_strategies()
-
