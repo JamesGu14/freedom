@@ -230,4 +230,5 @@ __marimo__/
 
 # Local AI / agent tooling
 .claude/
+.codex
 .codex/
