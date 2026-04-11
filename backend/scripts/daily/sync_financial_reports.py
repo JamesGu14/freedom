@@ -18,14 +18,18 @@ from app.data.duckdb_financials import (  # noqa: E402
     ensure_financial_tables,
     upsert_balancesheet,
     upsert_cashflow,
+    upsert_express,
     upsert_fina_indicator,
+    upsert_forecast,
     upsert_income,
 )
 from app.data.mongo_data_sync_date import mark_sync_done  # noqa: E402
 from app.data.tushare_client import (  # noqa: E402
     fetch_balancesheet,
     fetch_cashflow,
+    fetch_express,
     fetch_fina_indicator,
+    fetch_forecast,
     fetch_income,
 )
 
@@ -35,7 +39,7 @@ _PAGE_SIZE = 5000
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync TuShare financial report datasets into DuckDB.")
-    parser.add_argument("--dataset", required=True, choices=["income", "balancesheet", "cashflow", "fina_indicator"])
+    parser.add_argument("--dataset", required=True, choices=["income", "balancesheet", "cashflow", "fina_indicator", "forecast", "express"])
     parser.add_argument("--start-date", type=str, default="", help="Announcement start date: YYYYMMDD or YYYY-MM-DD")
     parser.add_argument("--end-date", type=str, default="", help="Announcement end date: YYYYMMDD or YYYY-MM-DD")
     parser.add_argument("--last-days", type=int, default=0, help="Pull most recent N calendar days by ann_date")
@@ -88,6 +92,10 @@ def fetch_dataset_page(dataset: str, start_date: str, end_date: str, offset: int
         return fetch_cashflow(start_date=start_date, end_date=end_date, limit=_PAGE_SIZE, offset=offset)
     if dataset == "fina_indicator":
         return fetch_fina_indicator(start_date=start_date, end_date=end_date, limit=_PAGE_SIZE, offset=offset)
+    if dataset == "forecast":
+        return fetch_forecast(start_date=start_date, end_date=end_date, limit=_PAGE_SIZE, offset=offset)
+    if dataset == "express":
+        return fetch_express(start_date=start_date, end_date=end_date, limit=_PAGE_SIZE, offset=offset)
     raise ValueError(f"unsupported dataset: {dataset}")
 
 
@@ -113,6 +121,10 @@ def _upsert_dataset(dataset: str, records_df) -> int:  # noqa: ANN001
         return upsert_cashflow(records_df)
     if dataset == "fina_indicator":
         return upsert_fina_indicator(records_df)
+    if dataset == "forecast":
+        return upsert_forecast(records_df)
+    if dataset == "express":
+        return upsert_express(records_df)
     raise ValueError(f"unsupported dataset: {dataset}")
 
 

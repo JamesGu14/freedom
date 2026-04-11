@@ -87,7 +87,7 @@ conda activate freedom
 
 echo "[INFO] $(date '+%F %T') start daily tasks for ${START_DATE} to ${END_DATE}" | tee -a "${LOG_FILE}"
 
-TOTAL_STEPS=12
+TOTAL_STEPS=16
 
 run_step_task() {
   local step_no="$1"
@@ -199,5 +199,22 @@ if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
 else
   skip_step "12" "同步机构调研(每周五)" "非周五"
 fi
+
+# Steps 13-16: 财务报告数据同步（fina_mainbz 不加入 daily.sh，每季度手动运行）
+
+# 13) Sync forecast (业绩预告) - daily
+run_step_task "13" "同步业绩预告" "python backend/scripts/daily/sync_financial_reports.py --dataset forecast --last-days 7"
+
+# 14) Sync express (业绩快报) - daily
+run_step_task "14" "同步业绩快报" "python backend/scripts/daily/sync_financial_reports.py --dataset express --last-days 7"
+
+# 15) Sync fina_audit (财务审计意见) - daily with 30-day window
+run_step_task "15" "同步财务审计意见" "python backend/scripts/daily/sync_fina_audit.py --last-days 30"
+
+# 16) Sync disclosure_date (财报披露日期) - daily with recent 2 periods
+run_step_task "16" "同步财报披露日期" "python backend/scripts/daily/sync_disclosure_date.py --recent 2"
+
+# Note: fina_mainbz (主营业务构成) is NOT included in daily.sh.
+# Run manually per quarter: python backend/scripts/daily/sync_fina_mainbz.py --period YYYYMMDD
 
 echo "[INFO] $(date '+%F %T') done" | tee -a "${LOG_FILE}"
