@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from bson import ObjectId
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
 from app.core.security import TokenDecodeError, safe_decode_access_token
 from app.data.mongo_users import get_user_by_id
+
+logger = logging.getLogger(__name__)
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -100,9 +103,22 @@ def _get_user_from_credentials(credentials: HTTPAuthorizationCredentials | None)
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> dict[str, object]:
-    return _get_user_from_credentials(credentials)
+    user = _get_user_from_credentials(credentials)
+    try:
+        from app.data.mongo_api_audit import insert_api_audit_log
+        insert_api_audit_log(
+            user_id=str(user.get("_id") or ""),
+            username=str(user.get("username") or ""),
+            endpoint=request.url.path,
+            method=request.method,
+            status_code=200,
+        )
+    except Exception:
+        logger.debug("api audit log write failed", exc_info=True)
+    return user
 
 
 def require_admin_user(
@@ -114,6 +130,7 @@ def require_admin_user(
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
 
 
-def get_shared_business_username() -> str:
-    username = str(settings.shared_business_username or "").strip()
-    return username or "james"
+def get_current_username(
+    current_user: dict[str, object] = Depends(get_current_user),
+) -> str:
+    return str(current_user.get("username") or "").strip()

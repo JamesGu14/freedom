@@ -64,8 +64,20 @@ def _query_duckdb_table(
     order_fields: list[str] | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    query = [f"SELECT * FROM {table} WHERE 1=1"]
-    params: list[Any] = []
+    """Read from Parquet files using DuckDB as query engine."""
+    if ts_code:
+        parquet_root = settings.data_dir / "raw" / table / f"ts_code={ts_code}"
+        if not parquet_root.exists():
+            return []
+        glob = str(parquet_root / "year=*" / "part-*.parquet")
+    else:
+        parquet_root = settings.data_dir / "raw" / table
+        if not parquet_root.exists():
+            return []
+        glob = str(parquet_root / "ts_code=*" / "year=*" / "part-*.parquet")
+
+    query = ["SELECT * FROM read_parquet(?, union_by_name=true) WHERE 1=1"]
+    params: list[Any] = [glob]
     if ts_code:
         query.append("AND ts_code = ?")
         params.append(ts_code)

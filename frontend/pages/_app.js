@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState, useCallback } from "react";
 import { AuthProvider, useAuth } from "../lib/auth";
+import { getToken } from "../lib/api";
 
 /* ── Inline SVG icon wrapper (Feather-style, 18×18) ── */
 function Ico({ children }) {
@@ -31,6 +32,36 @@ const NAV = [
     exact: true,
     icon: (
       <Ico>
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </Ico>
+    ),
+  },
+  {
+    href: "/sector-ranking",
+    label: "板块排名",
+    icon: (
+      <Ico>
+        <line x1="18" y1="20" x2="18" y2="10" />
+        <line x1="12" y1="20" x2="12" y2="4" />
+        <line x1="6" y1="20" x2="6" y2="14" />
+      </Ico>
+    ),
+  },
+  {
+    href: "/market-index",
+    label: "大盘指数",
+    icon: (
+      <Ico>
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+        <polyline points="17 6 23 6 23 12" />
+      </Ico>
+    ),
+  },
+  {
+    href: "/stock-list",
+    label: "股票列表",
+    icon: (
+      <Ico>
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         <polyline points="9 22 9 12 15 12 15 22" />
       </Ico>
@@ -49,19 +80,9 @@ const NAV = [
     ),
   },
   {
-    href: "/sector-ranking",
-    label: "板块排名",
-    icon: (
-      <Ico>
-        <line x1="18" y1="20" x2="18" y2="10" />
-        <line x1="12" y1="20" x2="12" y2="4" />
-        <line x1="6" y1="20" x2="6" y2="14" />
-      </Ico>
-    ),
-  },
-  {
     href: "/daily-signals",
     label: "Daily Signals",
+    adminOnly: true,
     icon: (
       <Ico>
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -71,6 +92,7 @@ const NAV = [
   {
     href: "/daily-signals-legacy",
     label: "Daily Signals(旧)",
+    adminOnly: true,
     icon: (
       <Ico>
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -80,21 +102,12 @@ const NAV = [
   {
     href: "/agent-freedom",
     label: "财神爷",
+    adminOnly: true,
     icon: (
       <Ico>
         <rect x="3" y="4" width="18" height="16" rx="2" />
         <line x1="3" y1="10" x2="21" y2="10" />
         <circle cx="16" cy="15" r="1.5" />
-      </Ico>
-    ),
-  },
-  {
-    href: "/market-index",
-    label: "大盘指数",
-    icon: (
-      <Ico>
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-        <polyline points="17 6 23 6 23 12" />
       </Ico>
     ),
   },
@@ -121,6 +134,7 @@ const NAV = [
   {
     href: "/strategies",
     label: "策略",
+    adminOnly: true,
     icon: (
       <Ico>
         <polyline points="16 18 22 12 16 6" />
@@ -131,6 +145,7 @@ const NAV = [
   {
     href: "/backtests",
     label: "回测",
+    adminOnly: true,
     icon: (
       <Ico>
         <circle cx="12" cy="12" r="10" />
@@ -144,7 +159,6 @@ const NAV = [
 function AppShell({ Component, pageProps }) {
   const router = useRouter();
   const { token, username, roles, initialized, logout } = useAuth();
-  const isLogin = router.pathname === "/login";
   const isAdmin = Array.isArray(roles) && roles.some((role) => String(role).trim().toLowerCase() === "admin");
 
   const [collapsed, setCollapsed] = useState(false);
@@ -172,39 +186,24 @@ function AppShell({ Component, pageProps }) {
     setDrawer(false);
   }, [router.pathname]);
 
-  /* Auth guard */
   useEffect(() => {
     if (!initialized) return;
-    if (!token && !isLogin) {
-      router.replace("/login");
-    } else if (token && isLogin) {
-      router.replace("/");
+    const currentToken = getToken();
+    if (!currentToken) {
+      window.location.href = "/management";
     }
-  }, [token, initialized, router.pathname]);
+  }, [initialized]);
 
   const isActive = (href, exact) =>
     exact
       ? router.pathname === href
       : router.pathname === href || router.pathname.startsWith(href + "/");
 
-  /* Login page: no sidebar */
-  if (isLogin) {
-    return (
-      <>
-        <Head>
-          <title>Freedom Quant</title>
-          <link rel="icon" href="/freedom/favicon.svg" />
-        </Head>
-        <Component {...pageProps} />
-      </>
-    );
-  }
-
   return (
     <>
       <Head>
         <title>Freedom Quant</title>
-        <link rel="icon" href="/freedom/favicon.svg" />
+        <link rel="icon" href="/freedom/favicon.ico" />
       </Head>
 
       {/* Mobile backdrop */}
@@ -226,6 +225,15 @@ function AppShell({ Component, pageProps }) {
             {NAV.map((item, i) =>
               item === "---" ? (
                 <div key={`d${i}`} className="sidebar__divider" />
+              ) : item.adminOnly && !isAdmin ? (
+                <span
+                  key={item.href}
+                  className="sidebar__item sidebar__item--disabled"
+                  title={collapsed ? item.label : undefined}
+                >
+                  <span className="sidebar__icon">{item.icon}</span>
+                  <span className="sidebar__label">{item.label}</span>
+                </span>
               ) : (
                 <Link
                   key={item.href}
@@ -254,22 +262,7 @@ function AppShell({ Component, pageProps }) {
                       <path d="M3 12a9 9 0 0 0 15.5 6.4" />
                     </Ico>
                   </span>
-                  <span className="sidebar__label">数据同步</span>
-                </Link>
-                <Link
-                  href="/users"
-                  className={`sidebar__item${isActive("/users") ? " sidebar__item--active" : ""}`}
-                  title={collapsed ? "用户管理" : undefined}
-                >
-                  <span className="sidebar__icon">
-                    <Ico>
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </Ico>
-                  </span>
-                  <span className="sidebar__label">用户管理</span>
+                   <span className="sidebar__label">数据同步</span>
                 </Link>
               </>
             )}

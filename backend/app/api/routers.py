@@ -8,10 +8,12 @@ from app.api.routes import (
     citic_sectors_router,
     data_sync_router,
     daily_signals_router,
+    daily_stock_signals_router,
     health_router,
     internal_audits_router,
     market_data_router,
     market_index_router,
+    market_regime_router,
     research_router,
     signal_router,
     sector_ranking_router,
@@ -20,7 +22,6 @@ from app.api.routes import (
     stocks_router,
     strategies_router,
     strategy_signals_router,
-    users_router,
 )
 from app.api.deps import get_current_user
 
@@ -36,9 +37,6 @@ router.include_router(
     agent_freedom_router,
     tags=["agent_freedom"],
     dependencies=[Depends(get_current_user)],
-)
-router.include_router(
-    users_router, tags=["users"], dependencies=[Depends(get_current_user)]
 )
 router.include_router(
     stocks_router, tags=["stocks"], dependencies=[Depends(get_current_user)]
@@ -73,6 +71,9 @@ router.include_router(
     daily_signals_router, tags=["daily_signals"], dependencies=[Depends(get_current_user)]
 )
 router.include_router(
+    daily_stock_signals_router, tags=["daily_stock_signals"], dependencies=[Depends(get_current_user)]
+)
+router.include_router(
     strategy_signals_router,
     tags=["strategy_signals"],
     dependencies=[Depends(get_current_user)],
@@ -94,4 +95,7 @@ router.include_router(
 )
 router.include_router(
     research_router, tags=["research"], dependencies=[Depends(get_current_user)]
+)
+router.include_router(
+    market_regime_router, tags=["market_regime"], dependencies=[Depends(get_current_user)]
 )

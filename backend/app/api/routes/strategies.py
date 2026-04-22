@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_current_user, get_shared_business_username
+from app.api.deps import get_current_username
 from app.services.strategy_service import (
     create_strategy,
     create_version,
@@ -70,16 +70,15 @@ def list_strategy_items(
 @router.post("/strategies")
 def create_strategy_item(
     payload: StrategyCreateRequest,
-    current_user: dict[str, object] = Depends(get_current_user),
+    username: str = Depends(get_current_username),
 ) -> dict[str, Any]:
-    del current_user
     try:
         item = create_strategy(
             name=payload.name,
             strategy_key=payload.strategy_key,
             description=payload.description,
             owner=payload.owner,
-            created_by=get_shared_business_username(),
+            created_by=username,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -135,16 +134,15 @@ def list_versions(strategy_id: str) -> dict[str, Any]:
 def create_strategy_version(
     strategy_id: str,
     payload: StrategyVersionCreateRequest,
-    current_user: dict[str, object] = Depends(get_current_user),
+    username: str = Depends(get_current_username),
 ) -> dict[str, Any]:
-    del current_user
     try:
         item = create_version(
             strategy_id=strategy_id,
             params_snapshot=payload.params_snapshot,
             code_ref=payload.code_ref,
             change_log=payload.change_log,
-            created_by=get_shared_business_username(),
+            created_by=username,
             version=payload.version,
         )
     except ValueError as exc:

@@ -49,7 +49,7 @@ def create_app() -> FastAPI:
     @application.on_event("startup")
     def _startup() -> None:
         ensure_stock_basic_indexes()
-        from app.data.mongo_users import ensure_admin_user, ensure_users_indexes
+        from app.data.mongo_users import ensure_users_indexes
         from app.data.mongo_refresh_tokens import ensure_refresh_token_indexes
         from app.data.mongo_backtest import ensure_strategy_backtest_indexes
 
@@ -61,9 +61,12 @@ def create_app() -> FastAPI:
         ensure_data_sync_job_run_indexes()
         ensure_agent_freedom_indexes()
         from app.data.mongo_data_sync_date import ensure_data_sync_date_indexes
+        from app.data.mongo_api_audit import ensure_api_audit_indexes
+        from app.data.mongo_market_regime import ensure_market_regime_indexes
 
         ensure_data_sync_date_indexes()
-        ensure_admin_user(settings.admin_username, settings.admin_password)
+        ensure_api_audit_indexes()
+        ensure_market_regime_indexes()
 
     @application.on_event("shutdown")
     def _shutdown() -> None:

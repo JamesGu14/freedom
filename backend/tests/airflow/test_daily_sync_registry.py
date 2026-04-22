@@ -15,12 +15,14 @@ def test_registry_contains_expected_groups_and_task_ids() -> None:
     assert "pull_daily_history" in task_ids
     assert "sync_dividend" in task_ids
     assert "sync_index_daily" in task_ids
+    assert "generate_daily_stock_signals" in task_ids
     assert groups == {
         "market_core",
         "factor_and_flow",
         "financials_and_corporate",
         "holders_and_margin",
         "index_and_industry",
+        "signals_and_screeners",
     }
 
 
@@ -42,9 +44,10 @@ def test_render_command_injects_trade_date_and_dataset_args() -> None:
 def test_registry_defaults_and_heavy_task_overrides() -> None:
     normal_task = get_daily_sync_task("sync_moneyflow_dc")
     heavy_task = get_daily_sync_task("sync_top10_holders")
+    signal_task = get_daily_sync_task("generate_daily_stock_signals")
 
     assert normal_task.retries == DEFAULT_RETRIES
     assert normal_task.retry_delay_minutes == DEFAULT_RETRY_DELAY_MINUTES
     assert heavy_task.retries == 3
     assert heavy_task.retry_delay_minutes == 15
-
+    assert signal_task.script_path == "backend/scripts/daily/generate_daily_stock_signals.py"

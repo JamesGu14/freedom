@@ -3,10 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
-import uuid
 
-import duckdb
 import tushare as ts
 
 from app.core.config import settings
@@ -47,7 +44,7 @@ def extract_repair_dates(dataset_summary: dict[str, object]) -> list[str]:
 
 P0_DATASET_CONFIG: dict[str, dict[str, str]] = {
     "moneyflow_dc": {"storage_type": "parquet"},
-    "adj_factor": {"storage_type": "duckdb"},
+    "adj_factor": {"storage_type": "parquet"},
     "index_factor_pro": {"storage_type": "mongo"},
 }
 
@@ -98,12 +95,7 @@ def repair_adj_factor_date(trade_date: str) -> dict[str, object]:
     if raw_df is None or raw_df.empty:
         return {"dataset": "adj_factor", "trade_date": trade_date, "status": "no_data", "rows": 0}
 
-    try:
-        saved = upsert_adj_factor(raw_df)
-    except duckdb.IOException as exc:
-        if "Conflicting lock is held" not in str(exc):
-            raise
-        saved = _repair_adj_factor_via_file_swap(raw_df, trade_date)
+    saved = upsert_adj_factor(raw_df)
     return {"dataset": "adj_factor", "trade_date": trade_date, "status": "success", "rows": int(saved)}
 
 
@@ -111,7 +103,6 @@ def repair_adj_factor_dates(trade_dates: list[str]) -> list[dict[str, object]]:
     if not trade_dates:
         return []
 
-    fetched_frames: list[tuple[str, object]] = []
     results: list[dict[str, object]] = []
     for trade_date in trade_dates:
         try:
@@ -123,19 +114,14 @@ def repair_adj_factor_dates(trade_dates: list[str]) -> list[dict[str, object]]:
         if raw_df is None or raw_df.empty:
             results.append({"dataset": "adj_factor", "trade_date": trade_date, "status": "no_data", "rows": 0})
             continue
-        fetched_frames.append((trade_date, raw_df))
 
-    if not fetched_frames:
-        return results
-
-    _repair_adj_factor_batch_via_file_swap(fetched_frames)
-    for trade_date, raw_df in fetched_frames:
+        saved = upsert_adj_factor(raw_df)
         results.append(
             {
                 "dataset": "adj_factor",
                 "trade_date": trade_date,
                 "status": "success",
-                "rows": int(len(raw_df)),
+                "rows": int(saved),
             }
         )
 
@@ -176,12 +162,12 @@ def repair_trade_date(dataset: str, trade_date: str) -> dict[str, object]:
 def assess_compaction_need(targets: dict[str, RepairTarget]) -> dict[str, dict[str, object]]:
     recommendations: dict[str, dict[str, object]] = {}
     for dataset_name, target in targets.items():
-        if target.storage_type == "duckdb":
-            recommendations[dataset_name] = {"should_run": False, "reason": "not_parquet_dataset"}
-        elif target.storage_type == "mongo":
+        if target.storage_type == "mongo":
             recommendations[dataset_name] = {"should_run": False, "reason": "mongo_dataset"}
+        elif target.storage_type == "parquet":
+            recommendations[dataset_name] = {"should_run": True, "reason": "parquet_dataset_after_repair"}
         else:
-            recommendations[dataset_name] = {"should_run": False, "reason": "compact_tool_unsupported"}
+            recommendations[dataset_name] = {"should_run": False, "reason": "unsupported_storage_type"}
     return recommendations
 
 
@@ -222,68 +208,6 @@ def run_repairs(targets: dict[str, RepairTarget]) -> dict[str, list[dict[str, ob
     return results
 
 
-def _repair_adj_factor_via_file_swap(raw_df, trade_date: str) -> int:
-    db_path = settings.duckdb_path
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = db_path.with_name(f"{db_path.name}.repair-{trade_date}-{uuid.uuid4().hex}")
-    backup_path = db_path.with_name(f"{db_path.name}.bak_repair_{trade_date}")
-
-    shutil.copy2(db_path, temp_path)
-    try:
-        with duckdb.connect(str(temp_path), read_only=False) as con:
-            con.register("df", raw_df)
-            con.execute("CREATE TABLE IF NOT EXISTS adj_factor AS SELECT * FROM df WHERE 1=0")
-            con.execute(
-                """
-                INSERT INTO adj_factor
-                SELECT df.*
-                FROM df
-                LEFT JOIN adj_factor a
-                  ON a.ts_code = df.ts_code AND a.trade_date = df.trade_date
-                WHERE a.ts_code IS NULL
-                """
-            )
-        if backup_path.exists():
-            backup_path.unlink()
-        shutil.copy2(db_path, backup_path)
-        temp_path.replace(db_path)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink(missing_ok=True)
-
-    return int(len(raw_df))
-
-
 def _fetch_adj_factor_via_tushare(trade_date: str):
     pro = ts.pro_api(settings.tushare_token)
     return pro.adj_factor(trade_date=trade_date)
-
-
-def _repair_adj_factor_batch_via_file_swap(fetched_frames: list[tuple[str, object]]) -> int:
-    db_path = settings.duckdb_path
-    temp_path = db_path.with_name(f"{db_path.name}.repair-batch-{uuid.uuid4().hex}")
-    backup_path = db_path.with_name(f"{db_path.name}.bak_repair_batch")
-    shutil.copy2(db_path, temp_path)
-    try:
-        with duckdb.connect(str(temp_path), read_only=False) as con:
-            for _, raw_df in fetched_frames:
-                con.register("df", raw_df)
-                con.execute("CREATE TABLE IF NOT EXISTS adj_factor AS SELECT * FROM df WHERE 1=0")
-                con.execute(
-                    """
-                    INSERT INTO adj_factor
-                    SELECT df.*
-                    FROM df
-                    LEFT JOIN adj_factor a
-                      ON a.ts_code = df.ts_code AND a.trade_date = df.trade_date
-                    WHERE a.ts_code IS NULL
-                    """
-                )
-        if backup_path.exists():
-            backup_path.unlink()
-        shutil.copy2(db_path, backup_path)
-        temp_path.replace(db_path)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink(missing_ok=True)
-    return sum(len(raw_df) for _, raw_df in fetched_frames)

@@ -3,8 +3,11 @@ const API_BASE =
 const SESSION_CLEARED_EVENT = "auth:session-cleared";
 let refreshPromise = null;
 
+let migrationChecked = false;
+
 const migrateLegacySession = () => {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || migrationChecked) return;
+  migrationChecked = true;
   const accessToken = localStorage.getItem("access_token");
   const refreshToken = localStorage.getItem("refresh_token");
   if (accessToken && !refreshToken) {
@@ -12,10 +15,27 @@ const migrateLegacySession = () => {
   }
 };
 
+const consumeUrlToken = () => {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  if (token) {
+    localStorage.setItem("access_token", token);
+    params.delete("token");
+    const newUrl =
+      window.location.pathname +
+      (params.toString() ? `?${params.toString()}` : "") +
+      window.location.hash;
+    window.history.replaceState({}, document.title, newUrl);
+    return token;
+  }
+  return null;
+};
+
 const getToken = () => {
   if (typeof window === "undefined") return null;
   migrateLegacySession();
-  return localStorage.getItem("access_token");
+  return consumeUrlToken() || localStorage.getItem("access_token");
 };
 
 const getRefreshToken = () => {
@@ -107,7 +127,7 @@ export const apiFetch = async (path, options = {}, retry = true) => {
   if (res.status === 401) {
     clearSession();
     if (typeof window !== "undefined") {
-      window.location.href = "/freedom/login";
+      window.location.href = "/management";
     }
   }
 

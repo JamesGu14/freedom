@@ -61,24 +61,27 @@ def resolve_dates(args: argparse.Namespace) -> list[str]:
 
 
 def load_ann_dates_from_financials(start_date: str, end_date: str) -> list[str]:
-    query = """
-        SELECT ann_date FROM (
-            SELECT DISTINCT ann_date FROM income WHERE ann_date IS NOT NULL AND ann_date >= ? AND ann_date <= ?
-            UNION
-            SELECT DISTINCT ann_date FROM balancesheet WHERE ann_date IS NOT NULL AND ann_date >= ? AND ann_date <= ?
-            UNION
-            SELECT DISTINCT ann_date FROM cashflow WHERE ann_date IS NOT NULL AND ann_date >= ? AND ann_date <= ?
-            UNION
-            SELECT DISTINCT ann_date FROM fina_indicator WHERE ann_date IS NOT NULL AND ann_date >= ? AND ann_date <= ?
-        ) t
-        ORDER BY ann_date
-    """
+    tables = ("income", "balancesheet", "cashflow", "fina_indicator")
+    union_parts: list[str] = []
+    params: list[str] = []
+    for table_name in tables:
+        table_root = settings.data_dir / "raw" / table_name
+        if not table_root.exists():
+            continue
+        glob_path = str(table_root / "ts_code=*" / "year=*" / "part-*.parquet")
+        union_parts.append(
+            "SELECT DISTINCT ann_date FROM read_parquet(?, union_by_name=true) "
+            "WHERE ann_date IS NOT NULL AND ann_date >= ? AND ann_date <= ?"
+        )
+        params.extend([glob_path, start_date, end_date])
+
+    if not union_parts:
+        return []
+
+    query = f"SELECT ann_date FROM ({' UNION '.join(union_parts)}) t ORDER BY ann_date"
     try:
         with get_connection(read_only=True) as con:
-            rows = con.execute(
-                query,
-                [start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date],
-            ).fetchall()
+            rows = con.execute(query, params).fetchall()
     except Exception:  # noqa: BLE001
         return []
     return [row[0] for row in rows if row and row[0]]
