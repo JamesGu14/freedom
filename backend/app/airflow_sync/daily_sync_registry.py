@@ -96,6 +96,38 @@ DAILY_SYNC_TASKS: tuple[DailySyncTask, ...] = (
         retry_delay_minutes=15,
     ),
     DailySyncTask(
+        task_id="sync_forecast",
+        group="financials_and_corporate",
+        script_path="backend/scripts/daily/sync_financial_reports.py",
+        base_args=("--dataset", "forecast"),
+        retries=3,
+        retry_delay_minutes=15,
+    ),
+    DailySyncTask(
+        task_id="sync_express",
+        group="financials_and_corporate",
+        script_path="backend/scripts/daily/sync_financial_reports.py",
+        base_args=("--dataset", "express"),
+        retries=3,
+        retry_delay_minutes=15,
+    ),
+    DailySyncTask(
+        task_id="sync_fina_audit",
+        group="financials_and_corporate",
+        script_path="backend/scripts/daily/sync_fina_audit.py",
+        base_args=("--last-days", "30"),
+        retries=3,
+        retry_delay_minutes=15,
+    ),
+    DailySyncTask(
+        task_id="sync_disclosure_date",
+        group="financials_and_corporate",
+        script_path="backend/scripts/daily/sync_disclosure_date.py",
+        base_args=("--recent", "2"),
+        retries=3,
+        retry_delay_minutes=15,
+    ),
+    DailySyncTask(
         task_id="sync_dividend",
         group="financials_and_corporate",
         script_path="backend/scripts/daily/sync_dividend.py",
@@ -149,7 +181,17 @@ DAILY_SYNC_TASKS: tuple[DailySyncTask, ...] = (
         task_id="sync_zhishu_daily_bundle",
         group="index_and_industry",
         script_path="backend/scripts/daily/sync_zhishu_data.py",
-        base_args=("--modules", "daily", "--skip-members"),
+        base_args=("--modules", "market", "--skip-members"),
+    ),
+    DailySyncTask(
+        task_id="generate_daily_stock_signals",
+        group="signals_and_screeners",
+        script_path="backend/scripts/daily/generate_daily_stock_signals.py",
+    ),
+    DailySyncTask(
+        task_id="generate_market_regime",
+        group="signals_and_screeners",
+        script_path="backend/scripts/daily/generate_market_regime.py",
     ),
 )
 
@@ -159,4 +201,3 @@ _TASK_INDEX = {task.task_id: task for task in DAILY_SYNC_TASKS}
 
 def get_daily_sync_task(task_id: str) -> DailySyncTask:
     return _TASK_INDEX[task_id]
-

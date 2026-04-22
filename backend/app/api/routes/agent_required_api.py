@@ -191,9 +191,14 @@ def _apply_adj(*, ts_code: str, items: list[dict[str, Any]], adj: str) -> list[d
     if not items:
         return items
 
+    code = _normalize_ts_code(ts_code)
+    adj_root = settings.data_dir / "raw" / "adj_factor" / f"ts_code={code}"
+    if not adj_root.exists():
+        return items
+    adj_glob = str(adj_root / "year=*" / "part-*.parquet")
     df = _safe_fetch_df(
-        "SELECT trade_date, adj_factor FROM adj_factor WHERE ts_code = ? ORDER BY trade_date",
-        [_normalize_ts_code(ts_code)],
+        "SELECT trade_date, adj_factor FROM read_parquet(?, union_by_name=true) WHERE ts_code = ? ORDER BY trade_date",
+        [adj_glob, code],
     )
     factors = {
         str(row["trade_date"]): float(row["adj_factor"])

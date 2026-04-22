@@ -99,5 +99,6 @@ def test_daily_market_data_dag_has_expected_schedule_and_groups() -> None:
     assert "finalize_run" in task_ids
     assert "market_core.pull_daily_history" in task_ids
     assert "financials_and_corporate.sync_dividend" in task_ids
+    assert "signals_and_screeners.generate_daily_stock_signals" in task_ids
     pull_daily = next(task for task in dag.tasks if task.task_id == "market_core.pull_daily_history")
     assert pull_daily.pool == "freedom_host_ssh"

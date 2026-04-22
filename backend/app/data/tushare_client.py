@@ -785,3 +785,164 @@ def fetch_top10_floatholders(
     if df is None:
         return pd.DataFrame()
     return df
+
+
+def fetch_forecast(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    type_: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    """Fetch forecast data from TuShare. ts_code is optional for querying by ann_date range."""
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "type": type_,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("forecast", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_express(
+    *,
+    ts_code: str = "",
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    """Fetch express data from TuShare. ts_code is optional for querying by ann_date range."""
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("express", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_fina_audit(
+    *,
+    ts_code: str,
+    ann_date: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    period: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    """Fetch fina_audit data from TuShare. ts_code is REQUIRED."""
+    if not ts_code:
+        raise ValueError("ts_code is required for fina_audit")
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "ann_date": ann_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "period": period,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("fina_audit", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_fina_mainbz(
+    *,
+    ts_code: str,
+    period: str = "",
+    type_: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    """Fetch fina_mainbz data from TuShare. ts_code is REQUIRED.
+    
+    Note: start_date/end_date here mean REPORTING PERIOD range (not announcement date).
+    """
+    if not ts_code:
+        raise ValueError("ts_code is required for fina_mainbz")
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "period": period,
+            "type": type_,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("fina_mainbz", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df
+
+
+def fetch_disclosure_date(
+    *,
+    ts_code: str = "",
+    end_date: str = "",
+    pre_date: str = "",
+    actual_date: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> pd.DataFrame:
+    """Fetch disclosure_date data from TuShare.
+    
+    Note: end_date here means REPORTING PERIOD (e.g., 20241231), not announcement date range.
+    Max 3000 rows per request.
+    """
+    params = {
+        k: v
+        for k, v in {
+            "ts_code": ts_code,
+            "end_date": end_date,
+            "pre_date": pre_date,
+            "actual_date": actual_date,
+            "limit": limit if limit is not None else "",
+            "offset": offset if offset is not None else "",
+        }.items()
+        if v != ""
+    }
+    df = _request_with_retry(lambda: _query_pro("disclosure_date", params=params))
+    if df is None:
+        return pd.DataFrame()
+    return df

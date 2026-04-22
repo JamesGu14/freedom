@@ -62,18 +62,22 @@ def resolve_dates(args: argparse.Namespace) -> list[str]:
 
 
 def load_ann_dates_from_holdernumber(start_date: str, end_date: str) -> list[str]:
+    stk_root = settings.data_dir / "raw" / "stk_holdernumber"
+    if not stk_root.exists():
+        return []
+    stk_glob = str(stk_root / "ts_code=*" / "year=*" / "part-*.parquet")
     try:
         with get_connection(read_only=True) as con:
             rows = con.execute(
                 """
                 SELECT DISTINCT ann_date
-                FROM stk_holdernumber
+                FROM read_parquet(?, union_by_name=true)
                 WHERE ann_date IS NOT NULL
                   AND ann_date >= ?
                   AND ann_date <= ?
                 ORDER BY ann_date
                 """,
-                [start_date, end_date],
+                [stk_glob, start_date, end_date],
             ).fetchall()
     except Exception:  # noqa: BLE001
         return []

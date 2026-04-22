@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Compact fragmented Hive-partitioned parquet directories into one file per partition.
 
-Supports datasets: daily, daily_basic, daily_limit, indicators, all.
-Deduplicates by (ts_code, trade_date), keeping the record from the latest file.
+Supports datasets: daily, daily_basic, daily_limit, indicators, adj_factor,
+margin_detail, stk_holdernumber, income, balancesheet, cashflow,
+fina_indicator, all.
+Deduplicates by dataset-specific keys (default: ts_code + trade_date), keeping
+the record from the latest file.
 Crash-safe: writes to temp file, renames to final, then deletes old parts.
 """
 from __future__ import annotations
@@ -27,6 +30,27 @@ DATASET_DIRS = {
     "daily_basic": "raw/daily_basic",
     "daily_limit": "raw/daily_limit",
     "indicators": "features/indicators",
+    "adj_factor": "raw/adj_factor",
+    "margin_detail": "raw/margin_detail",
+    "stk_holdernumber": "raw/stk_holdernumber",
+    "income": "raw/income",
+    "balancesheet": "raw/balancesheet",
+    "cashflow": "raw/cashflow",
+    "fina_indicator": "raw/fina_indicator",
+}
+
+DEDUP_KEYS = {
+    "daily": ["ts_code", "trade_date"],
+    "daily_basic": ["ts_code", "trade_date"],
+    "daily_limit": ["ts_code", "trade_date"],
+    "indicators": ["ts_code", "trade_date"],
+    "adj_factor": ["ts_code", "trade_date"],
+    "margin_detail": ["ts_code", "trade_date"],
+    "stk_holdernumber": ["ts_code", "ann_date", "end_date"],
+    "income": ["ts_code", "end_date", "ann_date"],
+    "balancesheet": ["ts_code", "end_date", "ann_date"],
+    "cashflow": ["ts_code", "end_date", "ann_date"],
+    "fina_indicator": ["ts_code", "end_date", "ann_date"],
 }
 
 
@@ -92,7 +116,7 @@ def cleanup_stale_temps(partition_dir: Path) -> int:
     return removed
 
 
-def compact_partition(partition_dir: Path) -> tuple[int, int]:
+def compact_partition(partition_dir: Path, dedup_keys: list[str] | None = None) -> tuple[int, int]:
     """Compact all part-*.parquet files in a partition directory into one.
 
     Returns (files_removed, files_written).
@@ -111,13 +135,17 @@ def compact_partition(partition_dir: Path) -> tuple[int, int]:
         tmp_path_sql = str(tmp_path).replace("'", "''")
 
         # Use filename=true so we can ORDER BY filename DESC to keep latest file's record
+        keys = dedup_keys or ["ts_code", "trade_date"]
+        partition_keys_sql = ", ".join(keys)
+        order_keys_sql = ", ".join(keys)
+
         select_sql = (
             "SELECT * EXCLUDE (filename) "
             "FROM read_parquet('{glob}', filename=true, union_by_name=true) "
             "QUALIFY row_number() OVER "
-            "(PARTITION BY ts_code, trade_date ORDER BY filename DESC) = 1"
-        ).format(glob=part_glob_sql)
-        order_sql = " ORDER BY ts_code, trade_date"
+            "(PARTITION BY {keys} ORDER BY filename DESC) = 1"
+        ).format(glob=part_glob_sql, keys=partition_keys_sql)
+        order_sql = f" ORDER BY {order_keys_sql}"
 
         # Safety check: count before and after dedup
         before_count = con.execute(
@@ -165,6 +193,7 @@ def compact_dataset(
     dataset: str, ts_code: str | None, year: str | None
 ) -> tuple[int, int]:
     rel_dir = DATASET_DIRS[dataset]
+    dedup_keys = DEDUP_KEYS.get(dataset, ["ts_code", "trade_date"])
     base_dir = settings.data_dir / rel_dir
     if not base_dir.exists():
         logger.info("[SKIP] %s: directory not found (%s)", dataset, base_dir)
@@ -188,7 +217,7 @@ def compact_dataset(
         disable=not progress_bar_enabled,
     ) as progress:
         for index, partition_dir in enumerate(progress, start=1):
-            removed, written = compact_partition(partition_dir)
+            removed, written = compact_partition(partition_dir, dedup_keys=dedup_keys)
             total_removed += removed
             total_written += written
             if progress_bar_enabled:

@@ -5,6 +5,7 @@ from app.api.routes.agent_required_api import router as agent_required_api_route
 from app.api.routes.agent_freedom import router as agent_freedom_router
 from app.api.routes.data_sync import router as data_sync_router
 from app.api.routes.daily_signals import router as daily_signals_router
+from app.api.routes.daily_stock_signals import router as daily_stock_signals_router
 from app.api.routes.health import router as health_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.citic_sectors import router as citic_sectors_router
@@ -19,7 +20,7 @@ from app.api.routes.strategy_signals import router as strategy_signals_router
 from app.api.routes.market_data import router as market_data_router
 from app.api.routes.research import router as research_router
 from app.api.routes.internal_audits import router as internal_audits_router
-from app.api.routes.users import router as users_router
+from app.api.routes.market_regime import router as market_regime_router
 
 __all__ = [
     "backtests_router",
@@ -27,6 +28,7 @@ __all__ = [
     "agent_freedom_router",
     "data_sync_router",
     "daily_signals_router",
+    "daily_stock_signals_router",
     "health_router",
     "auth_router",
     "citic_sectors_router",
@@ -41,5 +43,5 @@ __all__ = [
     "market_data_router",
     "research_router",
     "internal_audits_router",
-    "users_router",
+    "market_regime_router",
 ]

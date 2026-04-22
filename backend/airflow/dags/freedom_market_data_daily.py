@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from airflow import DAG
@@ -8,9 +10,13 @@ from airflow.exceptions import AirflowSkipException
 from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 
-from app.airflow_sync.daily_sync_registry import DAILY_SYNC_TASKS
-from app.airflow_sync.host_job_runner import HostJobRequest, run_host_job
-from app.airflow_sync.trade_day_guard import is_trade_day
+FREEDOM_BACKEND_PATH = Path("/opt/freedom_backend")
+if str(FREEDOM_BACKEND_PATH) not in sys.path:
+    sys.path.insert(0, str(FREEDOM_BACKEND_PATH))
+
+from app.airflow_sync.daily_sync_registry import DAILY_SYNC_TASKS  # noqa: E402
+from app.airflow_sync.host_job_runner import HostJobRequest, run_host_job  # noqa: E402
+from app.airflow_sync.trade_day_guard import is_trade_day  # noqa: E402
 
 
 DAG_ID = "freedom_market_data_daily"
@@ -74,6 +80,7 @@ with DAG(
         "financials_and_corporate",
         "holders_and_margin",
         "index_and_industry",
+        "signals_and_screeners",
     ):
         with TaskGroup(group_id=group_id) as task_group:
             created: list[PythonOperator] = []
@@ -102,9 +109,12 @@ with DAG(
     precheck_trade_day >> groups["holders_and_margin"]
     precheck_trade_day >> groups["index_and_industry"]
     groups["market_core"] >> groups["factor_and_flow"]
+    groups["market_core"] >> groups["signals_and_screeners"]
+    groups["factor_and_flow"] >> groups["signals_and_screeners"]
 
     groups["market_core"] >> finalize_run
     groups["factor_and_flow"] >> finalize_run
     groups["financials_and_corporate"] >> finalize_run
     groups["holders_and_margin"] >> finalize_run
     groups["index_and_industry"] >> finalize_run
+    groups["signals_and_screeners"] >> finalize_run

@@ -172,26 +172,23 @@ def upsert_adj_factor(df: pd.DataFrame) -> int:
     if df.empty:
         return 0
 
-    if "trade_date" not in df.columns:
-        raise ValueError("adj_factor data must include trade_date")
+    if "ts_code" not in df.columns or "trade_date" not in df.columns:
+        raise ValueError("adj_factor data must include ts_code and trade_date")
+
+    base_dir = settings.data_dir / "raw" / "adj_factor"
+    base_dir.mkdir(parents=True, exist_ok=True)
 
     data = df.copy()
     data["trade_date"] = data["trade_date"].astype(str)
+    data["year"] = data["trade_date"].str[:4]
 
-    with get_connection(read_only=False) as con:
-        con.register("df", data)
-        con.execute("CREATE TABLE IF NOT EXISTS adj_factor AS SELECT * FROM df WHERE 1=0")
-        con.execute(
-            """
-            INSERT INTO adj_factor
-            SELECT df.*
-            FROM df
-            LEFT JOIN adj_factor a
-              ON a.ts_code = df.ts_code AND a.trade_date = df.trade_date
-            WHERE a.ts_code IS NULL
-            """
-        )
-        return df.shape[0]
+    for (ts_code, year), group in data.groupby(["ts_code", "year"], sort=False):
+        partition_dir = base_dir / f"ts_code={ts_code}" / f"year={year}"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+        new_rows = group.drop(columns=["year"])
+        part_path = partition_dir / f"part-{uuid.uuid4().hex}.parquet"
+        new_rows.to_parquet(part_path, index=False, engine="pyarrow")
+    return df.shape[0]
 
 
 def upsert_daily_basic(df: pd.DataFrame) -> int:
@@ -326,21 +323,26 @@ def list_stk_limit(ts_code: str) -> list[dict[str, object]]:
 
 
 def list_adj_factor(ts_code: str, limit: int | None = None) -> list[dict[str, object]]:
+    adj_factor_root = settings.data_dir / "raw" / "adj_factor" / f"ts_code={ts_code}"
+    if not adj_factor_root.exists():
+        return []
+
+    part_glob = str(adj_factor_root / "year=*/part-*.parquet")
     if limit is not None and limit > 0:
         query = (
             "SELECT ts_code, trade_date, adj_factor "
             "FROM ("
             "  SELECT ts_code, trade_date, adj_factor "
-            "  FROM adj_factor WHERE ts_code = ? ORDER BY trade_date DESC LIMIT ?"
+            "  FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date DESC LIMIT ?"
             ") ORDER BY trade_date"
         )
-        params = [ts_code, limit]
+        params = [part_glob, ts_code, limit]
     else:
         query = (
             "SELECT ts_code, trade_date, adj_factor "
-            "FROM adj_factor WHERE ts_code = ? ORDER BY trade_date"
+            "FROM read_parquet(?) WHERE ts_code = ? ORDER BY trade_date"
         )
-        params = [ts_code]
+        params = [part_glob, ts_code]
     with get_connection(read_only=True) as con:
         try:
             rows = con.execute(query, params).fetchdf()

@@ -83,7 +83,7 @@ cd "${ROOT_DIR}"
 
 echo "[INFO] $(date '+%F %T') start daily tasks for ${START_DATE} to ${END_DATE}" | tee -a "${LOG_FILE}"
 
-TOTAL_STEPS=7
+TOTAL_STEPS=11
 
 run_step_task() {
   local step_no="$1"
@@ -165,5 +165,22 @@ if [[ "${TARGET_WEEKDAY}" == "5" ]]; then
 else
   skip_step "7" "压缩Parquet文件(每周五)" "非周五"
 fi
+
+# Steps 8-11: 财务报告数据同步（fina_mainbz 不加入 daily.sh，每季度手动运行）
+
+# 8) Sync forecast (业绩预告) - daily
+run_step_task "8" "同步业绩预告" "python /app/scripts/daily/sync_financial_reports.py --dataset forecast --last-days 7"
+
+# 9) Sync express (业绩快报) - daily
+run_step_task "9" "同步业绩快报" "python /app/scripts/daily/sync_financial_reports.py --dataset express --last-days 7"
+
+# 10) Sync fina_audit (财务审计意见) - daily with 30-day window
+run_step_task "10" "同步财务审计意见" "python /app/scripts/daily/sync_fina_audit.py --last-days 30"
+
+# 11) Sync disclosure_date (财报披露日期) - daily with recent 2 periods
+run_step_task "11" "同步财报披露日期" "python /app/scripts/daily/sync_disclosure_date.py --recent 2"
+
+# Note: fina_mainbz (主营业务构成) is NOT included in daily.sh.
+# Run manually per quarter: python /app/scripts/daily/sync_fina_mainbz.py --period YYYYMMDD
 
 echo "[INFO] $(date '+%F %T') done" | tee -a "${LOG_FILE}"

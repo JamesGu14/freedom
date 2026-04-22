@@ -23,7 +23,7 @@
 |-------|-----------|---------------|
 | Data Source | TuShare API | Chinese A-share market data |
 | Raw Data Storage | Parquet | Partitioned by `ts_code/year` |
-| Query Engine | DuckDB | Local analytics, metadata storage |
+| Query Engine | DuckDB | **只读查询引擎**，不写入任何原生表 |
 | Metadata DB | MongoDB 7 | stock_basic, daily_signal, users, groups |
 | Cache (Optional) | Redis 7 | Hot data caching |
 | Backend | FastAPI | Python 3.11+, port 9000 |
@@ -401,8 +401,9 @@ data/raw/daily/ts_code=000001.SZ/year=2024/part-*.parquet
 - Check TuShare token is valid
 
 ### DuckDB lock errors
-- The app has retry logic for lock contention
-- Stop scheduler if running manual data operations
+- DuckDB 在本项目已改为**纯只读查询引擎**，不再写入任何原生表
+- 如果遇到写锁错误，说明有代码在向 DuckDB 写入数据，这是 **不正确的行为**，应改为写入 Parquet 或 MongoDB
+- 参见下方"数据写入规范"章节
 
 ### Frontend API errors
 - Verify `NEXT_PUBLIC_API_BASE_URL` is set correctly
@@ -417,3 +418,41 @@ data/raw/daily/ts_code=000001.SZ/year=2024/part-*.parquet
 - **DuckDB:** https://duckdb.org/docs/
 - **Next.js:** https://nextjs.org/docs
 - **ECharts:** https://echarts.apache.org/en/option.html
+
+---
+
+## 数据写入规范（必读）
+
+> **本项目严格禁止向 DuckDB 写入任何原生表。** DuckDB 仅作为只读查询引擎，通过 `read_parquet()` 和 `read_parquet_auto()` 查询 Parquet 文件。
+
+### 数据只能写入以下两个目的地：
+
+| 目的地 | 用途 | 示例 |
+|--------|------|------|
+| **Parquet 文件** | 所有行情、指标、因子等时序数据 | `data/raw/<dataset>/ts_code=<code>/year=<YYYY>/part-*.parquet` |
+| **MongoDB** | 元数据、信号、用户、分组等文档型数据 | `stock_basic`, `daily_stock_signals`, `users`, `stock_groups` 等 |
+
+### 禁止的操作：
+
+- `CREATE TABLE` / `INSERT INTO` / `UPDATE` DuckDB 原生表
+- 使用 `get_connection()` 不带 `read_only=True` 进行写操作
+- 任何形式的 DuckDB DDL/DML（`CREATE`, `INSERT`, `UPDATE`, `DELETE`, `ALTER`, `DROP` 之外也不应有写操作）
+
+### 正确的查询模式：
+
+```python
+# ✅ 正确：只读连接查询 Parquet
+with get_connection(read_only=True) as conn:
+    df = conn.execute("SELECT * FROM read_parquet('data/raw/daily/**/*.parquet')").fetchdf()
+
+# ❌ 错误：向 DuckDB 写入数据
+with get_connection() as conn:
+    conn.execute("CREATE TABLE ...")
+    conn.execute("INSERT INTO ...")
+```
+
+### 原因：
+
+- Gunicorn 多 worker 进程同时访问 DuckDB 时会产生写锁冲突（`duckdb.IOException: Cannot write to database because it is in use by another process`）
+- Parquet 文件按 `ts_code/year` 分区，天然支持并发写入不同分区
+- MongoDB 本身就是并发友好的文档数据库，适合元数据和信号数据

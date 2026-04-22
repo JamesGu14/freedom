@@ -63,8 +63,8 @@ def get_dataset_registry() -> OrderedDict[str, DatasetConfig]:
         ),
         DatasetConfig(
             name="adj_factor",
-            storage_type="duckdb",
-            location="adj_factor",
+            storage_type="parquet",
+            location="raw/adj_factor",
             date_field="trade_date",
             audit_mode="date_and_coverage",
             coverage_key="ts_code",

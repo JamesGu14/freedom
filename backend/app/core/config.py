@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     tushare_token: str | None = None
     data_dir: Path = PROJECT_ROOT / "data"
     duckdb_path: Path = PROJECT_ROOT / "data" / "quant.duckdb"
-    redis_url: str | None = None
+    redis_url: str = "redis://shared-infra-shared-redis-1:6379/0"
     mongodb_url: str = "mongodb://james:2x%23fdksma%21@localhost:27017/?authSource=admin"
     mongodb_db: str = "freedom"
 
@@ -35,10 +35,6 @@ class Settings(BaseSettings):
     auth_cookie_domain: str | None = None
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
-    shared_business_username: str = "james"
-
-    admin_username: str = "james"
-    admin_password: str = "james1031"
 
     cors_allow_origins: str = "http://localhost:3000"
 

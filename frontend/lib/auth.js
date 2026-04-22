@@ -23,6 +23,21 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    const handleStorageChange = () => {
+      const stored = getToken();
+      setTokenState(stored);
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("storage", handleStorageChange);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("storage", handleStorageChange);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const handleSessionCleared = () => {
       setTokenState(null);
       setUsernameState(null);
