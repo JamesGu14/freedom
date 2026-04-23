@@ -8,15 +8,14 @@ let migrationChecked = false;
 const migrateLegacySession = () => {
   if (typeof window === "undefined" || migrationChecked) return;
   migrationChecked = true;
-  const accessToken = localStorage.getItem("access_token");
-  const refreshToken = localStorage.getItem("refresh_token");
-  if (accessToken && !refreshToken) {
-    clearSession();
-  }
+  // Previously we cleared session if refreshToken was missing, but that breaks
+  // logins that only provide an access_token (e.g. from navigation URL).
 };
 
+let urlTokenProcessed = false;
+
 const consumeUrlToken = () => {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined" || urlTokenProcessed) return null;
   const params = new URLSearchParams(window.location.search);
   const token = params.get("token");
   if (token) {
@@ -27,15 +26,19 @@ const consumeUrlToken = () => {
       (params.toString() ? `?${params.toString()}` : "") +
       window.location.hash;
     window.history.replaceState({}, document.title, newUrl);
+    urlTokenProcessed = true;
     return token;
   }
+  urlTokenProcessed = true;
   return null;
 };
 
 const getToken = () => {
   if (typeof window === "undefined") return null;
   migrateLegacySession();
-  return consumeUrlToken() || localStorage.getItem("access_token");
+  const urlToken = consumeUrlToken();
+  const localToken = localStorage.getItem("access_token");
+  return urlToken || localToken;
 };
 
 const getRefreshToken = () => {
@@ -127,7 +130,7 @@ export const apiFetch = async (path, options = {}, retry = true) => {
   if (res.status === 401) {
     clearSession();
     if (typeof window !== "undefined") {
-      window.location.href = "/management";
+      window.location.href = "/management/navigation";
     }
   }
 

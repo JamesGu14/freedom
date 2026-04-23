@@ -35,7 +35,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/  <-- Removed this as it ignores frontend/lib source code
 lib64/
 parts/
 sdist/

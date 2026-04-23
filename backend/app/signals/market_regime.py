@@ -3,8 +3,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-import duckdb
 from pymongo import MongoClient
+
+from app.data.duckdb_store import get_connection
 
 INDEX_TS_CODE = "000001.SH"
 INDEX_COL = "index_factor_pro"
@@ -105,15 +106,15 @@ def _compute_breadth(trade_date: str, data_dir: str) -> tuple[float, dict]:
     glob_pattern = f"{data_dir}/raw/daily/*/year={year}/*.parquet"
 
     try:
-        con = duckdb.connect()
-        row = con.execute(
-            f"SELECT COUNT(*) as total,"
-            f" SUM(CASE WHEN pct_chg > 0 THEN 1 ELSE 0 END) as up,"
-            f" SUM(CASE WHEN pct_chg < 0 THEN 1 ELSE 0 END) as down"
-            f" FROM read_parquet('{glob_pattern}')"
-            f" WHERE trade_date = '{trade_date}'"
-        ).fetchone()
-        con.close()
+        with get_connection(read_only=True) as con:
+            row = con.execute(
+                "SELECT COUNT(*) AS total,"
+                " SUM(CASE WHEN pct_chg > 0 THEN 1 ELSE 0 END) AS up,"
+                " SUM(CASE WHEN pct_chg < 0 THEN 1 ELSE 0 END) AS down"
+                " FROM read_parquet(?, hive_partitioning=1, union_by_name=true)"
+                " WHERE trade_date = ?",
+                [glob_pattern, trade_date],
+            ).fetchone()
     except Exception:
         return 0.0, {"error": "query_failed"}
 

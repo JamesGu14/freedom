@@ -190,7 +190,7 @@ function AppShell({ Component, pageProps }) {
     if (!initialized) return;
     const currentToken = getToken();
     if (!currentToken) {
-      window.location.href = "/management";
+      window.location.href = "/management/navigation";
     }
   }, [initialized]);
 
@@ -287,10 +287,12 @@ function AppShell({ Component, pageProps }) {
               <button
                 type="button"
                 className="sidebar__item"
-                onClick={logout}
+                onClick={() => {
+                  logout();
+                  window.location.href = "/management/navigation";
+                }}
                 title={collapsed ? "退出" : undefined}
-              >
-                <span className="sidebar__icon">
+              >                <span className="sidebar__icon">
                   <Ico>
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                     <polyline points="16 17 21 12 16 7" />

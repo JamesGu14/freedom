@@ -10,10 +10,13 @@ from app.data.duckdb_store import get_connection
 from app.data.mongo_stock import get_stock_basic_map
 from app.signals.patterns.config import (
     BUY_PATTERNS,
+    PATTERN_CATEGORIES,
+    RESONANCE_THRESHOLDS,
     SELL_PATTERNS,
     calculate_weighted_score,
+    classify_resonance_level as classify_weighted_resonance_level,
 )
-from app.signals.patterns.engine import compute_pattern_flags_for_stock
+from app.signals.patterns.engine import compute_pattern_flags_at
 
 
 BUY_SIGNAL_TYPES = (
@@ -26,26 +29,17 @@ SELL_SIGNAL_TYPES = (
 
 ALL_SIGNAL_TYPES = (*BUY_SIGNAL_TYPES, *SELL_SIGNAL_TYPES)
 RESONANCE_LEVELS = ("normal", "strong", "very_strong")
+RESONANCE_COUNT_THRESHOLDS: dict[str, int] = {
+    "normal": 2,
+    "strong": 3,
+    "very_strong": 4,
+}
 
 
 def classify_resonance_level(signal_count: int) -> str | None:
-    if signal_count >= 4:
-        return "very_strong"
-    if signal_count == 3:
-        return "strong"
-    if signal_count == 2:
-        return "normal"
-    return None
-
-
-def classify_resonance_level_weighted(weighted_score: int) -> str | None:
-    from app.signals.patterns.config import RESONANCE_THRESHOLDS
-    if weighted_score >= RESONANCE_THRESHOLDS["very_strong"]:
-        return "very_strong"
-    if weighted_score >= RESONANCE_THRESHOLDS["strong"]:
-        return "strong"
-    if weighted_score >= RESONANCE_THRESHOLDS["normal"]:
-        return "normal"
+    for level in reversed(RESONANCE_LEVELS):
+        if signal_count >= RESONANCE_COUNT_THRESHOLDS[level]:
+            return level
     return None
 
 
@@ -173,7 +167,7 @@ def build_resonance_documents(*, trade_date: str, stock_rows: list[dict[str, Any
                     "trade_date": trade_date,
                     "signal_side": signal_side,
                     "resonance_level": resonance_level,
-                    "min_signal_count": {"normal": 2, "strong": 3, "very_strong": 4}[resonance_level],
+                    "min_signal_count": RESONANCE_COUNT_THRESHOLDS[resonance_level],
                     "count": len(stocks),
                     "stocks": stocks,
                 }
@@ -182,14 +176,13 @@ def build_resonance_documents(*, trade_date: str, stock_rows: list[dict[str, Any
 
 
 def build_pattern_resonance_documents(*, trade_date: str, stock_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    from app.signals.patterns.config import PATTERN_CATEGORIES, RESONANCE_THRESHOLDS
     docs: list[dict[str, Any]] = []
     for signal_side in ("buy", "sell"):
-        for resonance_level in ("normal", "strong", "very_strong"):
+        for resonance_level in RESONANCE_LEVELS:
             stocks: list[dict[str, Any]] = []
             for stock_row in stock_rows:
                 weighted_score = int(stock_row.get("pattern_weighted_same_side", {}).get(signal_side, 0))
-                if classify_resonance_level_weighted(weighted_score) != resonance_level:
+                if classify_weighted_resonance_level(weighted_score) != resonance_level:
                     continue
                 unified_hits = stock_row.get("unified_hits", {})
                 patterns = [p for p in unified_hits if unified_hits[p]]
@@ -323,16 +316,21 @@ def _build_stock_rows_by_date(frame: pd.DataFrame, limit_frame: pd.DataFrame, *,
     basics = get_stock_basic_map(ts_codes)
     stock_rows_by_date: dict[str, list[dict[str, Any]]] = {trade_date: [] for trade_date in target_dates}
 
-    limit_by_ts = {}
+    limit_by_ts: dict[str, dict[str, dict[str, Any]]] = {}
     if not limit_frame.empty:
         for ts_code, group in limit_frame.groupby("ts_code", sort=False):
-            limit_by_ts[str(ts_code)] = group.to_dict(orient="records")
+            limit_by_ts[str(ts_code)] = {
+                str(item["trade_date"]): item for item in group.to_dict(orient="records")
+            }
+
+    buy_pattern_set = frozenset(BUY_PATTERNS)
+    sell_pattern_set = frozenset(SELL_PATTERNS)
 
     for ts_code, group in frame.groupby("ts_code", sort=False):
         records = group.to_dict(orient="records")
         by_date = {str(item["trade_date"]): item for item in records}
         dates = sorted(by_date)
-        limit_records = limit_by_ts.get(str(ts_code), [])
+        limit_by_date = limit_by_ts.get(str(ts_code), {})
         for index in range(1, len(dates)):
             trade_date = dates[index]
             if trade_date not in target_date_set:
@@ -341,24 +339,31 @@ def _build_stock_rows_by_date(frame: pd.DataFrame, limit_frame: pd.DataFrame, *,
             prev_row = by_date[dates[index - 1]]
             prior_window = [by_date[date] for date in dates[max(0, index - 20) : index]]
             flags = _compute_signal_flags_from_context(row, prev_row, prior_window)
-            signal_hits = {signal_type: hit for signal_type, hit in flags.items() if hit}
-            buy_count = sum(1 for signal_type, hit in signal_hits.items() if hit and signal_type.startswith("buy_"))
-            sell_count = sum(1 for signal_type, hit in signal_hits.items() if hit and signal_type.startswith("sell_"))
+            signal_hits = {signal_type: True for signal_type, hit in flags.items() if hit}
+            buy_count = sum(1 for signal_type in signal_hits if signal_type.startswith("buy_"))
+            sell_count = sum(1 for signal_type in signal_hits if signal_type.startswith("sell_"))
             metrics = {
                 signal_type: _metrics_for_signal(signal_type, row, prev_row, prior_window)
                 for signal_type in signal_hits
             }
 
-            pattern_flags = compute_pattern_flags_for_stock(records, limit_records, target_date=trade_date)
-            pattern_hits = {k: v for k, v in pattern_flags.items() if v}
-            
+            if index >= 2:
+                pattern_hits = compute_pattern_flags_at(
+                    today=row,
+                    prev=prev_row,
+                    prev2=by_date[dates[index - 2]],
+                    prior_window=prior_window,
+                    today_limit=limit_by_date.get(trade_date),
+                    prev_limit=limit_by_date.get(dates[index - 1]),
+                )
+            else:
+                pattern_hits = {}
+
             unified_hits = dict(pattern_hits)
-            for signal_type, hit in signal_hits.items():
-                if hit:
-                    unified_hits[signal_type] = True
-            
-            buy_unified = [p for p in unified_hits if p in BUY_PATTERNS]
-            sell_unified = [p for p in unified_hits if p in SELL_PATTERNS]
+            unified_hits.update(signal_hits)
+
+            buy_unified = [p for p in unified_hits if p in buy_pattern_set]
+            sell_unified = [p for p in unified_hits if p in sell_pattern_set]
             buy_weighted = calculate_weighted_score(buy_unified)
             sell_weighted = calculate_weighted_score(sell_unified)
 
@@ -378,8 +383,8 @@ def _build_stock_rows_by_date(frame: pd.DataFrame, limit_frame: pd.DataFrame, *,
                     "pattern_count_same_side": {"buy": len(buy_unified), "sell": len(sell_unified)},
                     "pattern_weighted_same_side": {"buy": buy_weighted, "sell": sell_weighted},
                     "pattern_resonance": {
-                        "buy": classify_resonance_level_weighted(buy_weighted),
-                        "sell": classify_resonance_level_weighted(sell_weighted),
+                        "buy": classify_weighted_resonance_level(buy_weighted),
+                        "sell": classify_weighted_resonance_level(sell_weighted),
                     },
                 }
             )

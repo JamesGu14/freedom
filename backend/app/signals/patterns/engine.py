@@ -62,33 +62,18 @@ from app.signals.patterns.detectors import (
 )
 
 
-def compute_pattern_flags_for_stock(
-    rows: list[dict[str, Any]],
-    limit_rows: list[dict[str, Any]],
+def compute_pattern_flags_at(
     *,
-    target_date: str,
+    today: dict[str, Any],
+    prev: dict[str, Any],
+    prev2: dict[str, Any],
+    prior_window: list[dict[str, Any]],
+    today_limit: dict[str, Any] | None,
+    prev_limit: dict[str, Any] | None,
 ) -> dict[str, bool]:
-    by_date = {str(row["trade_date"]): row for row in rows}
-    limit_by_date = {str(row["trade_date"]): row for row in limit_rows}
-    dates = sorted(by_date)
-    
-    if target_date not in by_date or len(dates) < 3:
-        return {}
-    
-    index = dates.index(target_date)
-    if index < 2:
-        return {}
-    
-    today = by_date[target_date]
-    prev = by_date[dates[index - 1]]
-    prev2 = by_date[dates[index - 2]]
-    prior_window = [by_date[date] for date in dates[max(0, index - 20) : index]]
-    
-    today_limit = limit_by_date.get(target_date)
-    prev_limit = limit_by_date.get(dates[index - 1])
-    
-    flags = {}
-    
+    """Compute pattern flags from pre-built context. Returns only truthy flags."""
+    flags: dict[str, bool] = {}
+
     flags["ma_bullish_alignment"] = detect_ma_bullish_alignment(today, prev)
     flags["ma_bearish_alignment"] = detect_ma_bearish_alignment(today, prev)
     flags["five_ma_rising"] = detect_five_ma_rising(today)
@@ -150,5 +135,30 @@ def compute_pattern_flags_for_stock(
     flags["sell_macd_kdj_double_cross"] = detect_sell_macd_kdj_double_cross(today, prev)
     flags["sell_volume_breakdown_20d"] = detect_sell_volume_breakdown_20d(today, prior_window)
     flags["sell_rsi_fall"] = detect_sell_rsi_fall(today, prev)
-    
+
     return {k: v for k, v in flags.items() if v}
+
+
+def compute_pattern_flags_for_stock(
+    rows: list[dict[str, Any]],
+    limit_rows: list[dict[str, Any]],
+    *,
+    target_date: str,
+) -> dict[str, bool]:
+    by_date = {str(row["trade_date"]): row for row in rows}
+    dates = sorted(by_date)
+    if target_date not in by_date or len(dates) < 3:
+        return {}
+    index = dates.index(target_date)
+    if index < 2:
+        return {}
+
+    limit_by_date = {str(row["trade_date"]): row for row in limit_rows}
+    return compute_pattern_flags_at(
+        today=by_date[target_date],
+        prev=by_date[dates[index - 1]],
+        prev2=by_date[dates[index - 2]],
+        prior_window=[by_date[d] for d in dates[max(0, index - 20) : index]],
+        today_limit=limit_by_date.get(target_date),
+        prev_limit=limit_by_date.get(dates[index - 1]),
+    )
