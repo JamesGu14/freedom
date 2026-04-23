@@ -51,3 +51,16 @@ def test_registry_defaults_and_heavy_task_overrides() -> None:
     assert heavy_task.retries == 3
     assert heavy_task.retry_delay_minutes == 15
     assert signal_task.script_path == "backend/scripts/daily/generate_daily_stock_signals.py"
+
+
+def test_disclosure_date_task_keeps_recent_args_without_trade_date_range() -> None:
+    task = get_daily_sync_task("sync_disclosure_date")
+
+    command = task.render_command("20260423")
+
+    assert command == [
+        "python",
+        "backend/scripts/daily/sync_disclosure_date.py",
+        "--recent",
+        "2",
+    ]

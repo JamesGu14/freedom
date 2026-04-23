@@ -48,6 +48,41 @@ def test_fetch_dataset_page_uses_date_window(monkeypatch) -> None:
     assert "ann_date" not in captured
 
 
+def test_fetch_dataset_page_uses_ann_date_for_forecast(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fetch_forecast(**kwargs):  # noqa: ANN003
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr(sync_financial_reports, "fetch_forecast", fake_fetch_forecast)
+
+    sync_financial_reports.fetch_dataset_page("forecast", "20260401", "20260423", 5000)
+
+    assert captured["ann_date"] == "20260423"
+    assert captured["offset"] == 5000
+    assert "start_date" not in captured
+    assert "end_date" not in captured
+
+
+def test_resolve_windows_uses_single_day_windows_for_forecast() -> None:
+    args = argparse.Namespace(
+        dataset="forecast",
+        start_date="20260421",
+        end_date="20260423",
+        last_days=0,
+        sleep=0.0,
+    )
+
+    windows = sync_financial_reports.resolve_windows(args, window_days=31)
+
+    assert windows == [
+        ("20260421", "20260421"),
+        ("20260422", "20260422"),
+        ("20260423", "20260423"),
+    ]
+
+
 def test_normalize_date_columns_preserves_missing_values() -> None:
     frame = pd.DataFrame(
         [

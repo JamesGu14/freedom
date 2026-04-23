@@ -13,20 +13,27 @@ class DailySyncTask:
     group: str
     script_path: str
     base_args: tuple[str, ...] = field(default_factory=tuple)
+    append_trade_date_range: bool = True
     retries: int = DEFAULT_RETRIES
     retry_delay_minutes: int = DEFAULT_RETRY_DELAY_MINUTES
     critical: bool = False
 
     def render_command(self, trade_date: str) -> list[str]:
-        return [
+        command = [
             "python",
             self.script_path,
             *self.base_args,
-            "--start-date",
-            trade_date,
-            "--end-date",
-            trade_date,
         ]
+        if self.append_trade_date_range:
+            command.extend(
+                [
+                    "--start-date",
+                    trade_date,
+                    "--end-date",
+                    trade_date,
+                ]
+            )
+        return command
 
 
 DAILY_SYNC_TASKS: tuple[DailySyncTask, ...] = (
@@ -124,6 +131,7 @@ DAILY_SYNC_TASKS: tuple[DailySyncTask, ...] = (
         group="financials_and_corporate",
         script_path="backend/scripts/daily/sync_disclosure_date.py",
         base_args=("--recent", "2"),
+        append_trade_date_range=False,
         retries=3,
         retry_delay_minutes=15,
     ),

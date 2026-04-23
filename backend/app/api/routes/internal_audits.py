@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import require_admin_user
+from app.audit.airflow_runner import run_weekly_airflow_audit
 from app.services.data_integrity_audit_job_service import (
     get_data_integrity_audit_run_status,
     start_data_integrity_audit_run,
@@ -20,6 +21,12 @@ class DataIntegrityAuditRunCreateRequest(BaseModel):
     datasets: list[str] = Field(default_factory=list)
     start_date: str | None = None
     end_date: str | None = None
+
+
+class WeeklyAirflowAuditRunRequest(BaseModel):
+    dag_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    scheduled_for: str = Field(min_length=1)
 
 
 @router.post("/internal/audits/data-integrity/runs", status_code=status.HTTP_202_ACCEPTED)
@@ -48,3 +55,19 @@ def get_data_integrity_audit_run(
     if not record:
         raise HTTPException(status_code=404, detail="audit run not found")
     return record
+
+
+@router.post("/internal/audits/data-integrity/weekly-run")
+def create_weekly_airflow_audit_run(
+    payload: WeeklyAirflowAuditRunRequest,
+    current_user: dict[str, object] = Depends(require_admin_user),
+) -> dict[str, Any]:
+    del current_user
+    try:
+        return run_weekly_airflow_audit(
+            dag_id=payload.dag_id,
+            task_id=payload.task_id,
+            scheduled_for=payload.scheduled_for,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

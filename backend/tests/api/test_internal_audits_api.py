@@ -72,6 +72,68 @@ def test_get_internal_audit_run_returns_404_when_missing(monkeypatch) -> None:
     assert response.json()["detail"] == "audit run not found"
 
 
+def test_create_weekly_internal_audit_run_executes_synchronously(monkeypatch) -> None:
+    client = _create_client()
+    client.app.dependency_overrides[require_admin_user] = lambda: {
+        "username": "james",
+        "roles": ["admin"],
+    }
+
+    captured: dict[str, object] = {}
+
+    def fake_run_weekly_airflow_audit(**kwargs):  # noqa: ANN003
+        captured.update(kwargs)
+        return {
+            "run_id": "weekly_20260321_060000",
+            "status_summary": {"green": 12, "yellow": 0, "red": 0},
+            "summary": {"dataset_count": 12},
+        }
+
+    monkeypatch.setattr(internal_audits_routes, "run_weekly_airflow_audit", fake_run_weekly_airflow_audit, raising=False)
+
+    response = client.post(
+        "/api/internal/audits/data-integrity/weekly-run",
+        json={
+            "dag_id": "freedom_data_integrity_weekly",
+            "task_id": "trigger_weekly_data_integrity_audit",
+            "scheduled_for": "2026-03-21T06:00:00+08:00",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run_id"] == "weekly_20260321_060000"
+    assert captured == {
+        "dag_id": "freedom_data_integrity_weekly",
+        "task_id": "trigger_weekly_data_integrity_audit",
+        "scheduled_for": "2026-03-21T06:00:00+08:00",
+    }
+
+
+def test_create_weekly_internal_audit_run_returns_500_on_runner_failure(monkeypatch) -> None:
+    client = _create_client()
+    client.app.dependency_overrides[require_admin_user] = lambda: {
+        "username": "james",
+        "roles": ["admin"],
+    }
+
+    def fake_run_weekly_airflow_audit(**kwargs):  # noqa: ANN003, ARG001
+        raise RuntimeError("audit boom")
+
+    monkeypatch.setattr(internal_audits_routes, "run_weekly_airflow_audit", fake_run_weekly_airflow_audit, raising=False)
+
+    response = client.post(
+        "/api/internal/audits/data-integrity/weekly-run",
+        json={
+            "dag_id": "freedom_data_integrity_weekly",
+            "task_id": "trigger_weekly_data_integrity_audit",
+            "scheduled_for": "2026-03-21T06:00:00+08:00",
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "audit boom"
+
+
 def test_internal_audit_routes_require_authentication() -> None:
     client = _create_client()
 

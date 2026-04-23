@@ -76,6 +76,8 @@ def resolve_windows(args: argparse.Namespace, *, window_days: int = 31) -> list[
     date_list = resolve_dates(args)
     if not date_list:
         return []
+    if args.dataset == "forecast":
+        return [(date_value, date_value) for date_value in date_list]
     windows: list[tuple[str, str]] = []
     for start_idx in range(0, len(date_list), window_days):
         window = date_list[start_idx : start_idx + window_days]
@@ -93,7 +95,7 @@ def fetch_dataset_page(dataset: str, start_date: str, end_date: str, offset: int
     if dataset == "fina_indicator":
         return fetch_fina_indicator(start_date=start_date, end_date=end_date, limit=_PAGE_SIZE, offset=offset)
     if dataset == "forecast":
-        return fetch_forecast(start_date=start_date, end_date=end_date, limit=_PAGE_SIZE, offset=offset)
+        return fetch_forecast(ann_date=end_date, limit=_PAGE_SIZE, offset=offset)
     if dataset == "express":
         return fetch_express(start_date=start_date, end_date=end_date, limit=_PAGE_SIZE, offset=offset)
     raise ValueError(f"unsupported dataset: {dataset}")
