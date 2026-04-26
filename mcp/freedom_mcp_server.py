@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Freedom Quant Platform MCP Server
 
-Exposes Freedom's A-share quantitative data as MCP tools for AI agents (OpenClaw, Hermes, etc.).
+Exposes Freedom's A-share quantitative data as MCP tools for AI agents.
 
 Environment variables:
   FREEDOM_API_BASE_URL  API base URL (default: http://localhost:9000/api)
-  FREEDOM_API_TOKEN     Bearer token for authentication (required)
+  FREEDOM_API_TOKEN     Bearer token for authentication
 """
 
 from __future__ import annotations
@@ -24,19 +24,40 @@ mcp = FastMCP("Freedom Quant")
 
 
 def _headers() -> dict[str, str]:
-    h = {"Accept": "application/json"}
+    h = {"Accept": "application/json", "Content-Type": "application/json"}
     if API_TOKEN:
         h["Authorization"] = f"Bearer {API_TOKEN}"
     return h
 
 
-async def _get(path: str, params: dict[str, Any] | None = None) -> Any:
-    clean = {k: v for k, v in (params or {}).items() if v is not None}
+async def _request(method: str, path: str, params: dict[str, Any] | None = None, json_data: dict[str, Any] | None = None) -> Any:
+    clean_params = {k: v for k, v in (params or {}).items() if v is not None}
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(f"{API_BASE}{path}", params=clean, headers=_headers())
+        r = await client.request(
+            method, f"{API_BASE}{path}",
+            params=clean_params,
+            json=json_data,
+            headers=_headers(),
+        )
         r.raise_for_status()
         body = r.json()
         return body.get("data", body)
+
+
+async def _get(path: str, params: dict[str, Any] | None = None) -> Any:
+    return await _request("GET", path, params)
+
+
+async def _post(path: str, json_data: dict[str, Any] | None = None) -> Any:
+    return await _request("POST", path, json_data=json_data)
+
+
+async def _patch(path: str, json_data: dict[str, Any] | None = None) -> Any:
+    return await _request("PATCH", path, json_data=json_data)
+
+
+async def _delete(path: str) -> Any:
+    return await _request("DELETE", path)
 
 
 def _fmt(data: Any) -> str:
@@ -124,6 +145,67 @@ async def get_stock_basic(ts_code: str) -> str:
         ts_code: 股票代码，格式 XXXXXX.SH 或 XXXXXX.SZ，如 600519.SH
     """
     data = await _get(f"/stocks/basic/{ts_code}")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def list_industries() -> str:
+    """获取所有行业分类列表。"""
+    data = await _get("/stocks/industries")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def list_stock_groups() -> str:
+    """获取用户的股票分组（自选股列表）。"""
+    data = await _get("/stock-groups")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_stock_group(group_id: str) -> str:
+    """获取指定股票分组的详情和成员股票。
+
+    Args:
+        group_id: 分组 ID
+    """
+    data = await _get(f"/stock-groups/{group_id}")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def create_stock_group(name: str, description: Optional[str] = None) -> str:
+    """创建一个新的股票分组（自选股列表）。
+
+    Args:
+        name: 分组名称
+        description: 分组描述
+    """
+    data = await _post("/stock-groups", {"name": name, "description": description})
+    return _fmt(data)
+
+
+@mcp.tool()
+async def add_stock_to_group(group_id: str, ts_code: str) -> str:
+    """向股票分组中添加股票。
+
+    Args:
+        group_id: 分组 ID
+        ts_code: 股票代码，如 600519.SH
+    """
+    data = await _post(f"/stock-groups/{group_id}/stocks", {"ts_code": ts_code})
+    return _fmt(data)
+
+
+@mcp.tool()
+async def remove_stock_from_group(group_id: str, ts_code: str) -> str:
+    """从股票分组中移除股票。
+
+    Args:
+        group_id: 分组 ID
+        ts_code: 股票代码，如 600519.SH
+    """
+    data = await _delete(f"/stock-groups/{group_id}/stocks/{ts_code}")
     return _fmt(data)
 
 
@@ -271,6 +353,22 @@ async def get_stock_indicators(
     return _fmt(data)
 
 
+@mcp.tool()
+async def get_stock_candles(ts_code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> str:
+    """获取股票 K 线数据（包含前复权价格，用于图表展示）。
+
+    Args:
+        ts_code: 股票代码，如 600519.SH
+        start_date: 开始日期，格式 YYYYMMDD
+        end_date: 结束日期，格式 YYYYMMDD
+    """
+    data = await _get(f"/stocks/{ts_code}/candles", {
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+    return _fmt(data)
+
+
 # ── 3. 行业与板块 ─────────────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -335,6 +433,30 @@ async def get_citic_industry_tree(level: Optional[int] = None) -> str:
         level: 行业级别 1/2/3，不填则返回全部层级
     """
     data = await _get("/industry/citic/tree", {"level": level})
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_citic_members(
+    industry_code: Optional[str] = None,
+    ts_code: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 200,
+) -> str:
+    """获取中信行业成员股票列表，或反查某只股票所属行业。
+
+    Args:
+        industry_code: 行业代码
+        ts_code: 反查某只股票属于哪个中信行业
+        page: 页码
+        page_size: 每页条数，默认 200
+    """
+    data = await _get("/industry/citic/members", {
+        "industry_code": industry_code,
+        "ts_code": ts_code,
+        "page": page,
+        "page_size": page_size,
+    })
     return _fmt(data)
 
 
@@ -487,7 +609,82 @@ async def get_daily_stock_signals_overview(
     return _fmt(data)
 
 
-# ── 6. 综合研究 ───────────────────────────────────────────────────────────────
+@mcp.tool()
+async def list_strategies() -> str:
+    """获取系统中所有可用的交易策略列表。"""
+    data = await _get("/strategies")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_strategy_signals(
+    strategy_name: str,
+    trade_date: Optional[str] = None,
+    top_n: int = 20,
+) -> str:
+    """获取指定策略的信号详情。
+
+    Args:
+        strategy_name: 策略名称
+        trade_date: 交易日期，格式 YYYYMMDD，不填则取最新信号日
+        top_n: 返回前 N 条信号，默认 20
+    """
+    data = await _get("/strategy-signals", {
+        "strategy_name": strategy_name,
+        "trade_date": trade_date,
+        "top_n": top_n,
+    })
+    return _fmt(data)
+
+
+# ── 6. 回测 ───────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def list_backtests() -> str:
+    """获取所有回测任务列表。"""
+    data = await _get("/backtests")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_backtest(backtest_id: str) -> str:
+    """获取指定回测任务的详情和结果。
+
+    Args:
+        backtest_id: 回测任务 ID
+    """
+    data = await _get(f"/backtests/{backtest_id}")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def create_backtest(
+    strategy_name: str,
+    ts_code: str,
+    start_date: str,
+    end_date: str,
+    initial_capital: float = 100000.0,
+) -> str:
+    """创建一个新的回测任务。
+
+    Args:
+        strategy_name: 策略名称
+        ts_code: 股票代码，如 600519.SH
+        start_date: 回测开始日期，格式 YYYYMMDD
+        end_date: 回测结束日期，格式 YYYYMMDD
+        initial_capital: 初始资金，默认 100000
+    """
+    data = await _post("/backtests", {
+        "strategy_name": strategy_name,
+        "ts_code": ts_code,
+        "start_date": start_date,
+        "end_date": end_date,
+        "initial_capital": initial_capital,
+    })
+    return _fmt(data)
+
+
+# ── 7. 综合研究 ───────────────────────────────────────────────────────────────
 
 @mcp.tool()
 async def get_stock_overview(ts_code: str) -> str:
@@ -573,7 +770,50 @@ async def get_market_hsgt_flow() -> str:
     return _fmt(data)
 
 
-# ── 7. 宏观数据 ───────────────────────────────────────────────────────────────
+# ── 8. 市场数据 ───────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def get_market_index_list() -> str:
+    """获取所有市场指数列表。"""
+    data = await _get("/market-index")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_market_index_data(
+    index_code: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> str:
+    """获取指定市场指数的历史数据。
+
+    Args:
+        index_code: 指数代码，如 "000001.SH"
+        start_date: 开始日期，格式 YYYYMMDD
+        end_date: 结束日期，格式 YYYYMMDD
+    """
+    data = await _get(f"/market-index/{index_code}", {
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_market_regime() -> str:
+    """获取当前市场状态分析（趋势/震荡/下跌等市场阶段判断）。"""
+    data = await _get("/market-regime")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_market_data_overview() -> str:
+    """获取市场数据总览（全市场概况、涨跌停统计、成交量等）。"""
+    data = await _get("/market-data/overview")
+    return _fmt(data)
+
+
+# ── 9. 宏观数据 ───────────────────────────────────────────────────────────────
 
 @mcp.tool()
 async def get_macro_lpr(limit: int = 36) -> str:
@@ -616,6 +856,97 @@ async def get_macro_pmi(limit: int = 36) -> str:
         limit: 返回最近 N 期，默认 36 期（约3年月度数据）
     """
     data = await _get("/macro/pmi", {"limit": limit})
+    return _fmt(data)
+
+
+# ── 10. 数据同步与审计 ─────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def trigger_data_sync(sync_type: str = "daily") -> str:
+    """触发数据同步任务。
+
+    Args:
+        sync_type: 同步类型，daily（日度）/full（全量）
+    """
+    data = await _post("/data-sync", {"sync_type": sync_type})
+    return _fmt(data)
+
+
+@mcp.tool()
+async def get_internal_audits() -> str:
+    """获取内部审计记录列表。"""
+    data = await _get("/internal-audits")
+    return _fmt(data)
+
+
+# ── 11. Agent 专用接口 ────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def agent_get_stock_summary(ts_code: str) -> str:
+    """Agent 专用：获取股票综合摘要（为 AI agent 优化的精简格式）。
+
+    Args:
+        ts_code: 股票代码，如 600519.SH
+    """
+    data = await _get(f"/agent/freedom/stocks/{ts_code}/summary")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def agent_get_daily_report(trade_date: Optional[str] = None) -> str:
+    """Agent 专用：获取每日市场报告（为 AI agent 优化的精简格式）。
+
+    Args:
+        trade_date: 交易日期，格式 YYYYMMDD，不填则取最新交易日
+    """
+    data = await _get("/agent/freedom/daily-report", {"trade_date": trade_date})
+    return _fmt(data)
+
+
+@mcp.tool()
+async def agent_search_stocks(
+    query: str,
+    filters: Optional[str] = None,
+    limit: int = 20,
+) -> str:
+    """Agent 专用：智能搜索股票（支持自然语言查询）。
+
+    Args:
+        query: 搜索查询，如 "高股息率低估值的银行股"
+        filters: 额外过滤条件 JSON 字符串
+        limit: 返回数量，默认 20
+    """
+    data = await _get("/agent/freedom/stocks/search", {
+        "query": query,
+        "filters": filters,
+        "limit": limit,
+    })
+    return _fmt(data)
+
+
+@mcp.tool()
+async def agent_get_recommended_stocks(strategy: Optional[str] = None, limit: int = 10) -> str:
+    """Agent 专用：获取推荐股票列表。
+
+    Args:
+        strategy: 策略名称，不填则使用默认策略
+        limit: 返回数量，默认 10
+    """
+    data = await _get("/agent/freedom/stocks/recommended", {
+        "strategy": strategy,
+        "limit": limit,
+    })
+    return _fmt(data)
+
+
+@mcp.tool()
+async def agent_get_portfolio_analysis(ts_codes: str) -> str:
+    """Agent 专用：获取投资组合分析。
+
+    Args:
+        ts_codes: 股票代码列表，逗号分隔，如 "600519.SH,000858.SZ"
+    """
+    data = await _get("/agent/freedom/portfolio/analysis", {"ts_codes": ts_codes})
     return _fmt(data)
 
 

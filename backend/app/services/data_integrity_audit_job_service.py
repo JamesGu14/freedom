@@ -30,6 +30,8 @@ class DataIntegrityAuditJobService:
         self._get_run = get_run
         self._thread_factory = thread_factory
         self._run_id_factory = run_id_factory or self._default_run_id
+        self._run_lock = threading.Lock()
+        self._active_run_id: str | None = None
 
     def start_run(
         self,
@@ -41,7 +43,15 @@ class DataIntegrityAuditJobService:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> dict[str, Any]:
-        run_id = self._run_id_factory()
+        with self._run_lock:
+            if self._active_run_id is not None:
+                return self.get_run(self._active_run_id) or {
+                    "run_id": self._active_run_id,
+                    "status": "running",
+                    "error_message": "another data integrity audit run is already in progress",
+                }
+            run_id = self._run_id_factory()
+            self._active_run_id = run_id
         self._upsert_run(
             {
                 "run_id": run_id,
@@ -101,39 +111,44 @@ class DataIntegrityAuditJobService:
             }
         )
         try:
-            result = self._audit_runner(
-                selected_names=selected_datasets or None,
-                run_id=run_id,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        except Exception as exc:
+            try:
+                result = self._audit_runner(
+                    selected_names=selected_datasets or None,
+                    run_id=run_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except Exception as exc:
+                self._upsert_run(
+                    {
+                        "run_id": run_id,
+                        "status": "failed",
+                        "finished_at": _now_utc(),
+                        "error_message": str(exc),
+                    }
+                )
+                return
+
             self._upsert_run(
                 {
                     "run_id": run_id,
-                    "status": "failed",
+                    "status": "succeeded",
                     "finished_at": _now_utc(),
-                    "error_message": str(exc),
+                    "output_dir": result.output_dir,
+                    "status_summary": _build_status_summary(result),
+                    "datasets": _build_dataset_summary(result),
+                    "summary": {
+                        "dataset_count": len(result.datasets),
+                        "excluded_datasets": list(result.excluded_datasets),
+                        "output_dir": result.output_dir,
+                    },
+                    "error_message": "",
                 }
             )
-            return
-
-        self._upsert_run(
-            {
-                "run_id": run_id,
-                "status": "succeeded",
-                "finished_at": _now_utc(),
-                "output_dir": result.output_dir,
-                "status_summary": _build_status_summary(result),
-                "datasets": _build_dataset_summary(result),
-                "summary": {
-                    "dataset_count": len(result.datasets),
-                    "excluded_datasets": list(result.excluded_datasets),
-                    "output_dir": result.output_dir,
-                },
-                "error_message": "",
-            }
-        )
+        finally:
+            with self._run_lock:
+                if self._active_run_id == run_id:
+                    self._active_run_id = None
 
     def _default_run_id(self) -> str:
         return f"async_{build_run_id()}"

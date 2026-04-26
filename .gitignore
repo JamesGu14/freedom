@@ -10,6 +10,7 @@ backend/app/data/*
 !backend/app/data/mongo_citic_daily.py
 !backend/app/data/mongo_market_index.py
 nohup.out
+*.pre-merge
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

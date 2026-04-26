@@ -19,9 +19,18 @@ def _is_lock_conflict(exc: duckdb.IOException) -> bool:
 
 def _open_connection(*, read_only: bool, retries: int, delay: float) -> duckdb.DuckDBPyConnection:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir = settings.data_dir / "duckdb_tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
     for attempt in range(retries):
         try:
-            return duckdb.connect(str(settings.duckdb_path), read_only=read_only)
+            con = duckdb.connect(str(settings.duckdb_path), read_only=read_only)
+            try:
+                con.execute("PRAGMA memory_limit='4GB'")
+                con.execute("PRAGMA threads=4")
+                con.execute(f"PRAGMA temp_directory='{temp_dir}'")
+            except Exception:  # pragma: no cover - defensive: never fail on PRAGMA
+                logger.warning("Failed to apply DuckDB memory PRAGMAs", exc_info=True)
+            return con
         except duckdb.IOException as exc:
             if _is_lock_conflict(exc) and attempt < retries - 1:
                 wait_seconds = min(delay * (2 ** attempt), 10.0)
@@ -51,6 +60,7 @@ class _ReadOnlyConnectionProxy:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
+        self._manager.release_thread_cursor()
         return False
 
     def execute(self, query: str, parameters: object | None = None):
@@ -111,6 +121,17 @@ class _SharedReadConnectionManager:
             self._close_base_connection_locked()
         self._thread_local.cursor = None
         self._thread_local.generation = -1
+
+    def release_thread_cursor(self) -> None:
+        cursor = getattr(self._thread_local, "cursor", None)
+        self._thread_local.cursor = None
+        self._thread_local.generation = -1
+        if cursor is None:
+            return
+        try:
+            cursor.close()
+        except Exception:  # pragma: no cover - defensive cleanup
+            logger.debug("Failed to close DuckDB read cursor cleanly", exc_info=True)
 
     def _ensure_base_connection_locked(self, *, retries: int, delay: float) -> duckdb.DuckDBPyConnection:
         if self._base_connection is None:

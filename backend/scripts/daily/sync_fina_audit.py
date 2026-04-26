@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import logging
 import sys
+import time
 from pathlib import Path
 
 from tqdm import tqdm
@@ -13,6 +14,7 @@ SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
 from app.core.config import settings  # noqa: E402
+from app.data.duckdb_store import get_connection  # noqa: E402
 from app.data.duckdb_financials import ensure_financial_tables, upsert_fina_audit  # noqa: E402
 from app.data.mongo_data_sync_date import mark_sync_done  # noqa: E402
 from app.data.mongo_stock import list_stock_codes  # noqa: E402
@@ -23,11 +25,12 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync TuShare fina_audit data into DuckDB.")
+    parser.add_argument("--mode", choices=["daily", "full"], default="daily", help="daily uses disclosure_date to reduce stock scope; full scans all stocks")
     parser.add_argument("--start-date", type=str, default="", help="Announcement start date: YYYYMMDD or YYYY-MM-DD")
     parser.add_argument("--end-date", type=str, default="", help="Announcement end date: YYYYMMDD or YYYY-MM-DD")
     parser.add_argument("--last-days", type=int, default=30, help="Pull most recent N calendar days by ann_date")
     parser.add_argument("--ts-codes", type=str, default="", help="Comma-separated stock codes for testing (e.g., '000001.SZ,600000.SH')")
-    parser.add_argument("--sleep", type=float, default=1.0, help="Sleep seconds between API calls")
+    parser.add_argument("--sleep", type=float, default=0.0, help="Sleep seconds between API calls")
     return parser.parse_args()
 
 
@@ -52,10 +55,44 @@ def resolve_dates(args: argparse.Namespace) -> tuple[str, str]:
     return start_date, end_date
 
 
-def get_ts_codes(args: argparse.Namespace) -> list[str]:
+def get_incremental_targets(start_date: str, end_date: str) -> list[tuple[str, str]]:
+    disclosure_glob = settings.data_dir / "raw" / "disclosure_date" / "**" / "*.parquet"
+    query = """
+        SELECT ts_code, max(end_date) AS period
+        FROM read_parquet(?, hive_partitioning=1, union_by_name=true)
+        WHERE ts_code IS NOT NULL
+          AND end_date IS NOT NULL
+          AND (
+            ann_date BETWEEN ? AND ?
+            OR actual_date BETWEEN ? AND ?
+            OR modify_date BETWEEN ? AND ?
+          )
+        GROUP BY ts_code
+        ORDER BY ts_code
+    """
+    try:
+        with get_connection(read_only=True) as conn:
+            rows = conn.execute(
+                query,
+                [
+                    str(disclosure_glob),
+                    start_date,
+                    end_date,
+                    start_date,
+                    end_date,
+                    start_date,
+                    end_date,
+                ],
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("Failed to load disclosure_date candidates for %s-%s: %s", start_date, end_date, exc)
+        return []
+    return [(str(row[0]).strip(), str(row[1]).strip()) for row in rows if row and row[0] and row[1]]
+
+
+def get_ts_codes(args: argparse.Namespace, start_date: str, end_date: str) -> list[str]:
     if args.ts_codes:
         return [code.strip() for code in args.ts_codes.split(",") if code.strip()]
-    # Get all stocks from stock_basic
     return list_stock_codes()
 
 
@@ -66,19 +103,38 @@ def main() -> None:
         raise SystemExit("TUSHARE_TOKEN is required")
 
     start_date, end_date = resolve_dates(args)
-    ts_codes = get_ts_codes(args)
+    daily_targets = [] if args.ts_codes or args.mode != "daily" else get_incremental_targets(start_date, end_date)
+    ts_codes = get_ts_codes(args, start_date, end_date)
+
+    if daily_targets:
+        logger.info(
+            "sync_fina_audit daily mode: using disclosure_date candidates=%s for %s-%s",
+            len(daily_targets),
+            start_date,
+            end_date,
+        )
+    elif args.mode == "daily" and not args.ts_codes:
+        logger.warning("sync_fina_audit daily mode found no disclosure_date candidates; falling back to full stock list")
     
-    logger.info("sync_fina_audit: start_date=%s, end_date=%s, stocks=%s", start_date, end_date, len(ts_codes))
+    target_count = len(daily_targets) if daily_targets else len(ts_codes)
+    logger.info("sync_fina_audit: mode=%s, start_date=%s, end_date=%s, stocks=%s", args.mode, start_date, end_date, target_count)
     
     ensure_financial_tables()
     
     total_upserted = 0
     empty_count = 0
     
-    progress = tqdm(ts_codes, total=len(ts_codes), desc="sync_fina_audit", unit="stock", dynamic_ncols=True)
-    for idx, ts_code in enumerate(progress, start=1):
+    targets = daily_targets or [(ts_code, "") for ts_code in ts_codes]
+    progress = tqdm(targets, total=len(targets), desc="sync_fina_audit", unit="stock", dynamic_ncols=True)
+    for idx, (ts_code, period) in enumerate(progress, start=1):
         try:
-            df = fetch_fina_audit(ts_code=ts_code, start_date=start_date, end_date=end_date)
+            fetch_kwargs = {"ts_code": ts_code}
+            if period:
+                fetch_kwargs["period"] = period
+            else:
+                fetch_kwargs["start_date"] = start_date
+                fetch_kwargs["end_date"] = end_date
+            df = fetch_fina_audit(**fetch_kwargs)
             if df is None or df.empty:
                 empty_count += 1
                 logger.debug("No fina_audit data for %s in date range %s-%s", ts_code, start_date, end_date)
@@ -94,8 +150,7 @@ def main() -> None:
             
             progress.set_postfix(ts_code=ts_code, upserted=upserted, total=total_upserted)
             
-            if args.sleep > 0 and idx < len(ts_codes):
-                import time
+            if args.sleep > 0 and idx < len(targets):
                 time.sleep(args.sleep)
                 
         except Exception as exc:

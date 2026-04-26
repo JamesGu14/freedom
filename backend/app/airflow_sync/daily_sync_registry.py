@@ -14,6 +14,7 @@ class DailySyncTask:
     script_path: str
     base_args: tuple[str, ...] = field(default_factory=tuple)
     append_trade_date_range: bool = True
+    timeout_seconds: int = 7200
     retries: int = DEFAULT_RETRIES
     retry_delay_minutes: int = DEFAULT_RETRY_DELAY_MINUTES
     critical: bool = False
@@ -122,7 +123,8 @@ DAILY_SYNC_TASKS: tuple[DailySyncTask, ...] = (
         task_id="sync_fina_audit",
         group="financials_and_corporate",
         script_path="backend/scripts/daily/sync_fina_audit.py",
-        base_args=("--last-days", "30"),
+        base_args=("--mode", "daily", "--last-days", "30", "--sleep", "0"),
+        timeout_seconds=14400,
         retries=3,
         retry_delay_minutes=15,
     ),
@@ -189,7 +191,7 @@ DAILY_SYNC_TASKS: tuple[DailySyncTask, ...] = (
         task_id="sync_zhishu_daily_bundle",
         group="index_and_industry",
         script_path="backend/scripts/daily/sync_zhishu_data.py",
-        base_args=("--modules", "market", "--skip-members"),
+        base_args=("--modules", "all", "--skip-members"),
     ),
     DailySyncTask(
         task_id="generate_daily_stock_signals",

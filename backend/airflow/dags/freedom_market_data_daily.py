@@ -14,6 +14,7 @@ FREEDOM_BACKEND_PATH = Path("/opt/freedom_backend")
 if str(FREEDOM_BACKEND_PATH) not in sys.path:
     sys.path.insert(0, str(FREEDOM_BACKEND_PATH))
 
+from app.airflow_sync.dag_failure_alert import on_dag_failure_alert  # noqa: E402
 from app.airflow_sync.daily_sync_registry import DAILY_SYNC_TASKS  # noqa: E402
 from app.airflow_sync.host_job_runner import HostJobRequest, run_host_job  # noqa: E402
 from app.airflow_sync.trade_day_guard import is_trade_day  # noqa: E402
@@ -45,7 +46,7 @@ def _run_task(task_id: str, **context) -> None:
         trade_date=trade_date,
         command=task_spec.render_command(trade_date),
     )
-    run_host_job(request)
+    run_host_job(request, timeout_seconds=task_spec.timeout_seconds)
 
 
 def _finalize_run(**context) -> None:
@@ -66,6 +67,8 @@ with DAG(
     max_active_runs=1,
     max_active_tasks=3,
     tags=["freedom", "market-data", "daily-sync"],
+    on_failure_callback=on_dag_failure_alert,
+    on_success_callback=on_dag_success_alert,
 ) as dag:
     precheck_trade_day = PythonOperator(
         task_id="precheck_trade_day",

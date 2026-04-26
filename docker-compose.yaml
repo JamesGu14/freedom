@@ -1,25 +1,11 @@
 services:
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "8080:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - frontend
-      - backend
-    restart: unless-stopped
-    networks:
-      default:
-      proxy:
-        aliases:
-          - freedom-app
-
   backend:
     build:
       context: ./backend
     expose:
       - "9000"
+    mem_limit: 6g
+    memswap_limit: 6g
     environment:
       TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       DATA_DIR: /data

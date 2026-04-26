@@ -12,6 +12,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.append(str(BACKEND_ROOT))
 
+from app.airflow_sync.dag_failure_alert import on_dag_failure_alert
 from app.audit.airflow_runner import run_weekly_airflow_audit
 
 
@@ -36,6 +37,8 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     tags=["freedom", "audit", "data-integrity"],
+    on_failure_callback=on_dag_failure_alert,
+    on_success_callback=on_dag_success_alert,
 ) as dag:
     run_weekly_data_integrity_audit = PythonOperator(
         task_id="run_weekly_data_integrity_audit",

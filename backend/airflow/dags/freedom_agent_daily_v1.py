@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 from urllib import error, parse, request
 
 import pendulum
 from airflow import DAG
 from airflow.exceptions import AirflowException
 from airflow.operators.python import PythonOperator
+
+FREEDOM_BACKEND_PATH = Path("/opt/freedom_backend")
+if str(FREEDOM_BACKEND_PATH) not in sys.path:
+    sys.path.insert(0, str(FREEDOM_BACKEND_PATH))
+
+from app.airflow_sync.dag_failure_alert import on_dag_failure_alert  # noqa: E402
 
 DAG_ID = "freedom_agent_daily_v1"
 BACKEND_API_BASE = os.getenv("FREEDOM_BACKEND_API_BASE", "http://backend:9000/api").rstrip("/")
@@ -85,6 +93,8 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     tags=["freedom", "agent"],
+    on_failure_callback=on_dag_failure_alert,
+    on_success_callback=on_dag_success_alert,
 ) as dag:
     t1_precheck_trade_day = PythonOperator(
         task_id="t1_precheck_trade_day",
