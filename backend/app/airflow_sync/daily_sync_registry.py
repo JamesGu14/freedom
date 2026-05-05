@@ -178,6 +178,16 @@ DAILY_SYNC_TASKS: tuple[DailySyncTask, ...] = (
         script_path="backend/scripts/daily/sync_margin_detail.py",
     ),
     DailySyncTask(
+        task_id="sync_hk_hold",
+        group="holders_and_margin",
+        script_path="backend/scripts/daily/sync_hk_hold.py",
+    ),
+    DailySyncTask(
+        task_id="sync_ccass_hold",
+        group="holders_and_margin",
+        script_path="backend/scripts/daily/sync_ccass_hold.py",
+    ),
+    DailySyncTask(
         task_id="sync_index_daily",
         group="index_and_industry",
         script_path="backend/scripts/daily/sync_index_daily.py",

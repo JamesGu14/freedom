@@ -14,7 +14,7 @@ FREEDOM_BACKEND_PATH = Path("/opt/freedom_backend")
 if str(FREEDOM_BACKEND_PATH) not in sys.path:
     sys.path.insert(0, str(FREEDOM_BACKEND_PATH))
 
-from app.airflow_sync.dag_failure_alert import on_dag_failure_alert  # noqa: E402
+from app.airflow_sync.dag_failure_alert import on_dag_failure_alert, on_dag_success_alert  # noqa: E402
 from app.airflow_sync.daily_sync_registry import DAILY_SYNC_TASKS  # noqa: E402
 from app.airflow_sync.host_job_runner import HostJobRequest, run_host_job  # noqa: E402
 from app.airflow_sync.trade_day_guard import is_trade_day  # noqa: E402

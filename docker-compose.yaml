@@ -4,8 +4,8 @@ services:
       context: ./backend
     expose:
       - "9000"
-    mem_limit: 6g
-    memswap_limit: 6g
+    mem_limit: 16g
+    memswap_limit: 16g
     environment:
       TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       DATA_DIR: /data

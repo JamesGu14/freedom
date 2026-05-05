@@ -2,6 +2,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:9000/api";
 const SESSION_CLEARED_EVENT = "auth:session-cleared";
 let refreshPromise = null;
+const DEFAULT_TIMEOUT_MS = 30000;
 
 let migrationChecked = false;
 
@@ -110,11 +111,20 @@ export const apiFetch = async (path, options = {}, retry = true) => {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    return fetch(url, {
-      ...options,
-      headers,
-      credentials: "include",
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), options.timeout || DEFAULT_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: "include",
+        signal: controller.signal,
+      });
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   let res = await runRequest();

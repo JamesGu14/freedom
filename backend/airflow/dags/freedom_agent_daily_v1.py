@@ -16,7 +16,7 @@ FREEDOM_BACKEND_PATH = Path("/opt/freedom_backend")
 if str(FREEDOM_BACKEND_PATH) not in sys.path:
     sys.path.insert(0, str(FREEDOM_BACKEND_PATH))
 
-from app.airflow_sync.dag_failure_alert import on_dag_failure_alert  # noqa: E402
+from app.airflow_sync.dag_failure_alert import on_dag_failure_alert, on_dag_success_alert  # noqa: E402
 
 DAG_ID = "freedom_agent_daily_v1"
 BACKEND_API_BASE = os.getenv("FREEDOM_BACKEND_API_BASE", "http://backend:9000/api").rstrip("/")

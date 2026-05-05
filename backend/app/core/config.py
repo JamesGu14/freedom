@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file="backend/.env", env_file_encoding="utf-8")  # type: ignore[reportIncompatibleVariableOverride]
 
     app_name: str = "quant-platform"
     api_prefix: str = "/api"
@@ -19,10 +19,10 @@ class Settings(BaseSettings):
     data_dir: Path = PROJECT_ROOT / "data"
     duckdb_path: Path = PROJECT_ROOT / "data" / "quant.duckdb"
     redis_url: str = "redis://shared-infra-shared-redis-1:6379/0"
-    mongodb_url: str = "mongodb://james:2x%23fdksma%21@localhost:27017/?authSource=admin"
+    mongodb_url: str = ""
     mongodb_db: str = "freedom"
 
-    jwt_secret: str = "change-me"
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_expires_minutes: int = 120
     refresh_token_expires_days: int = 7
