@@ -9,6 +9,7 @@ from app.data.duckdb_store import (
     get_next_trade_date,
     list_indicators,
     list_last_n_days_pct_chg,
+    list_latest_daily_basic,
     list_latest_daily_changes,
 )
 from app.data.mongo_stock import (
@@ -18,7 +19,7 @@ from app.data.mongo_stock import (
     list_stock_basic,
     upsert_stock_basic,
 )
-from app.data.tushare_client import fetch_stock_basic
+from app.data.mongo import get_collection
 
 
 def _normalize_df(df: pd.DataFrame) -> list[dict[str, object]]:
@@ -93,6 +94,10 @@ def get_latest_daily_changes(ts_codes: list[str]) -> dict[str, dict[str, object]
     return list_latest_daily_changes(ts_codes)
 
 
+def get_latest_daily_basic_for_codes(ts_codes: list[str]) -> dict[str, dict[str, object]]:
+    return list_latest_daily_basic(ts_codes)
+
+
 def get_daily_changes_for_date(ts_codes: list[str], trade_date: str) -> dict[str, dict[str, object]]:
     return list_daily_changes_for_date(ts_codes, trade_date)
 
@@ -105,3 +110,26 @@ def get_last_n_days_pct_chg(
     ts_codes: list[str], n: int = 3
 ) -> dict[str, dict[str, object]]:
     return list_last_n_days_pct_chg(ts_codes, n=n)
+
+
+def get_latest_stock_signals(ts_codes: list[str]) -> dict[str, dict[str, object]]:
+    """Get the latest signal (BUY/SELL) for each stock from daily_signal collection."""
+    if not ts_codes:
+        return {}
+    collection = get_collection("daily_signal")
+    pipeline = [
+        {"$match": {"stock_code": {"$in": ts_codes}}},
+        {"$sort": {"trading_date": -1}},
+        {"$group": {
+            "_id": "$stock_code",
+            "trading_date": {"$first": "$trading_date"},
+            "signal": {"$first": "$signal"},
+            "strategy": {"$first": "$strategy"},
+        }},
+    ]
+    result: dict[str, dict[str, object]] = {}
+    for doc in collection.aggregate(pipeline):
+        code = doc.pop("_id", None)
+        if code:
+            result[code] = doc
+    return result

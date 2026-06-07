@@ -16,9 +16,10 @@ from app.data.mongo_groups import (
     list_groups,
     remove_stock_from_group,
     update_group_name,
+    update_stock_remark,
 )
 from app.data.mongo_stock import get_stock_by_code
-from app.services.stocks_service import get_latest_daily_changes
+from app.services.stocks_service import get_latest_daily_changes, get_latest_daily_basic_for_codes, get_last_n_days_pct_chg, get_latest_stock_signals
 
 router = APIRouter()
 
@@ -29,10 +30,15 @@ class StockGroupCreatePayload(BaseModel):
 
 class StockGroupAddPayload(BaseModel):
     ts_code: str = Field(min_length=1, max_length=32)
+    remark: str | None = Field(default=None, max_length=512)
 
 
 class StockGroupUpdatePayload(BaseModel):
     name: str = Field(min_length=1, max_length=64)
+
+
+class StockGroupStockUpdatePayload(BaseModel):
+    remark: str = Field(default="", max_length=512)
 
 
 def _parse_group_id(group_id: str) -> ObjectId:
@@ -104,19 +110,41 @@ def list_group_stocks(group_id: str) -> dict[str, list[dict[str, object]]]:
     items = list_group_items(group_obj_id)
     codes = [item.get("ts_code") for item in items if item.get("ts_code")]
     change_map = get_latest_daily_changes(codes)
+    basic_map = get_latest_daily_basic_for_codes(codes)
+    pct_map = get_last_n_days_pct_chg(codes, n=5)
+    signal_map = get_latest_stock_signals(codes)
     serialized = []
     for item in items:
         change = change_map.get(item.get("ts_code"))
+        basic = basic_map.get(item.get("ts_code"))
+        pct_data = pct_map.get(item.get("ts_code"))
+        sig = signal_map.get(item.get("ts_code"))
+
+        # Compute 3-day and 5-day pct_chg from the 5-day query
+        pct_chg_3d = None
+        pct_chg_5d = None
+        if pct_data:
+            pct_chg_5d = pct_data.get("pct_chg_nd")
+            vals = [pct_data.get(f"pct_chg_{i}") for i in range(1, 4)]
+            if any(v is not None for v in vals):
+                pct_chg_3d = sum(v for v in vals if v is not None)
+
         serialized.append(
             {
                 "ts_code": item.get("ts_code"),
                 "name": item.get("name"),
                 "industry": item.get("industry"),
                 "market": item.get("market"),
-                "added_at": _serialize_datetime(item.get("added_at")),
+                "remark": item.get("remark", ""),
                 "latest_trade_date": change.get("trade_date") if change else None,
                 "latest_change": change.get("change") if change else None,
                 "latest_pct_chg": change.get("pct_chg") if change else None,
+                "pct_chg_3d": pct_chg_3d,
+                "pct_chg_5d": pct_chg_5d,
+                "total_mv": basic.get("total_mv") if basic else None,
+                "circ_mv": basic.get("circ_mv") if basic else None,
+                "latest_signal": sig.get("signal") if sig else None,
+                "latest_signal_date": sig.get("trading_date") if sig else None,
             }
         )
     return {"items": serialized}
@@ -131,8 +159,25 @@ def add_group_stock(group_id: str, payload: StockGroupAddPayload) -> dict[str, b
     stock = get_stock_by_code(ts_code)
     if not stock:
         raise HTTPException(status_code=400, detail="Stock not found")
-    added = add_stock_to_group(group_obj_id, ts_code, stock_id=stock.get("_id"))
+    added = add_stock_to_group(
+        group_obj_id,
+        ts_code,
+        stock_id=stock.get("_id"),
+        remark=payload.remark,
+    )
     return {"added": added}
+
+
+@router.put("/stock-groups/{group_id}/stocks/{ts_code}")
+def update_group_stock(group_id: str, ts_code: str, payload: StockGroupStockUpdatePayload) -> dict[str, bool]:
+    group_obj_id = _parse_group_id(group_id)
+    if not get_group(group_obj_id):
+        raise HTTPException(status_code=404, detail="Group not found")
+    resolved = resolve_ts_code_input(ts_code, strict=False)
+    updated = update_stock_remark(group_obj_id, resolved, payload.remark)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Stock not found in group")
+    return {"updated": updated}
 
 
 @router.delete("/stock-groups/{group_id}/stocks/{ts_code}")

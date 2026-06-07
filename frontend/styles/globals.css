@@ -350,7 +350,11 @@ body {
 }
 
 .modal-box--wide {
-  width: min(960px, 92vw);
+  max-width: 900px;
+}
+
+.modal-box--signal {
+  max-width: 640px;
 }
 
 .modal-box__header {
@@ -933,6 +937,40 @@ h1 {
 .primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.secondary {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--bg);
+  border-color: var(--accent);
+}
+
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.small,
+.small {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .sync-btn {
@@ -1596,6 +1634,117 @@ td:first-child {
 .name-cell {
   font-weight: 600;
   color: var(--ink);
+}
+
+.remark-cell {
+  max-width: 160px;
+}
+
+.remark-text {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s;
+}
+
+.remark-text:hover {
+  background: var(--bg);
+  color: var(--ink);
+  overflow: visible;
+  white-space: normal;
+  word-break: break-all;
+  position: relative;
+  z-index: 2;
+}
+
+.remark-edit input {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  outline: none;
+}
+
+.remark-edit input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.remark-edit-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.action-cell {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mv-cell {
+  white-space: nowrap;
+}
+
+.mv-value {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* ── Signal cell ── */
+.signal-cell {
+  white-space: nowrap;
+  text-align: center;
+}
+
+.signal-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.signal-buy {
+  background: #fde8e8;
+  color: #c53030;
+}
+
+.signal-sell {
+  background: #e6ffed;
+  color: #2f855a;
+}
+
+.signal-none {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.signal-date {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Sortable headers ── */
+.sort-arrow {
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+.th-remark {
+  min-width: 120px;
 }
 
 .muted-text {

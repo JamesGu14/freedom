@@ -37,6 +37,7 @@ DATASET_DIRS = {
     "balancesheet": "raw/balancesheet",
     "cashflow": "raw/cashflow",
     "fina_indicator": "raw/fina_indicator",
+    "disclosure_date": "raw/disclosure_date",
 }
 
 DEDUP_KEYS = {
@@ -51,6 +52,7 @@ DEDUP_KEYS = {
     "balancesheet": ["ts_code", "end_date", "ann_date"],
     "cashflow": ["ts_code", "end_date", "ann_date"],
     "fina_indicator": ["ts_code", "end_date", "ann_date"],
+    "disclosure_date": ["ts_code", "end_date", "ann_date"],
 }
 
 
@@ -217,9 +219,13 @@ def compact_dataset(
         disable=not progress_bar_enabled,
     ) as progress:
         for index, partition_dir in enumerate(progress, start=1):
-            removed, written = compact_partition(partition_dir, dedup_keys=dedup_keys)
-            total_removed += removed
-            total_written += written
+            try:
+                removed, written = compact_partition(partition_dir, dedup_keys=dedup_keys)
+                total_removed += removed
+                total_written += written
+            except (OSError, IOError, duckdb.IOException) as e:
+                logger.warning("skip %s: %s", partition_dir, e)
+                continue
             if progress_bar_enabled:
                 progress.set_postfix(removed=total_removed, compacted=total_written, refresh=False)
             elif index % progress_log_every == 0 or index == len(partitions):

@@ -452,6 +452,54 @@ def list_latest_daily_changes(ts_codes: list[str]) -> dict[str, dict[str, object
     return result
 
 
+def list_latest_daily_basic(ts_codes: list[str]) -> dict[str, dict[str, object]]:
+    """Get latest daily_basic data (total_mv, circ_mv) for multiple stocks."""
+    if not ts_codes:
+        return {}
+
+    basic_root = settings.data_dir / "raw" / "daily_basic"
+    if not basic_root.exists():
+        return {}
+
+    part_globs: list[str] = []
+    for code in ts_codes:
+        code_dir = basic_root / f"ts_code={code}"
+        if code_dir.exists():
+            part_globs.append(str(code_dir / "year=*/part-*.parquet"))
+    if not part_globs:
+        return {}
+
+    query = f"""
+        SELECT ts_code,
+               total_mv,
+               circ_mv
+        FROM (
+            SELECT ts_code,
+                   total_mv,
+                   circ_mv,
+                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+            FROM read_parquet(?, hive_partitioning=1)
+        )
+        WHERE rn = 1
+    """
+    with get_connection(read_only=True) as con:
+        try:
+            rows = con.execute(query, [part_globs]).fetchdf()
+        except (duckdb.CatalogException, duckdb.IOException):
+            return {}
+
+    if rows.empty:
+        return {}
+
+    rows = rows.where(pd.notna(rows), None)
+    result: dict[str, dict[str, object]] = {}
+    for row in rows.to_dict(orient="records"):
+        ts_code = row.pop("ts_code", None)
+        if ts_code:
+            result[ts_code] = row
+    return result
+
+
 def list_latest_daily_prices(ts_codes: list[str]) -> dict[str, dict[str, object]]:
     if not ts_codes:
         return {}

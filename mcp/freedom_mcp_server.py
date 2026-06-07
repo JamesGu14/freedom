@@ -56,6 +56,10 @@ async def _patch(path: str, json_data: dict[str, Any] | None = None) -> Any:
     return await _request("PATCH", path, json_data=json_data)
 
 
+async def _put(path: str, json_data: dict[str, Any] | None = None) -> Any:
+    return await _request("PUT", path, json_data=json_data)
+
+
 async def _delete(path: str) -> Any:
     return await _request("DELETE", path)
 
@@ -186,14 +190,18 @@ async def create_stock_group(name: str, description: Optional[str] = None) -> st
 
 
 @mcp.tool()
-async def add_stock_to_group(group_id: str, ts_code: str) -> str:
-    """向股票分组中添加股票。
-
+async def add_stock_to_group(group_id: str, ts_code: str, remark: Optional[str] = None) -> str:
+    """向股票分组中添加股票，可附带备注信息。
+ 
     Args:
         group_id: 分组 ID
         ts_code: 股票代码，如 600519.SH
+        remark: 备注信息，如 "银行龙头"、"高股息标的"
     """
-    data = await _post(f"/stock-groups/{group_id}/stocks", {"ts_code": ts_code})
+    payload: dict[str, Any] = {"ts_code": ts_code}
+    if remark:
+        payload["remark"] = remark
+    data = await _post(f"/stock-groups/{group_id}/stocks", payload)
     return _fmt(data)
 
 
@@ -206,6 +214,19 @@ async def remove_stock_from_group(group_id: str, ts_code: str) -> str:
         ts_code: 股票代码，如 600519.SH
     """
     data = await _delete(f"/stock-groups/{group_id}/stocks/{ts_code}")
+    return _fmt(data)
+
+
+@mcp.tool()
+async def update_stock_remark(group_id: str, ts_code: str, remark: str) -> str:
+    """更新分组中某只股票的备注信息。
+
+    Args:
+        group_id: 分组 ID
+        ts_code: 股票代码，如 600519.SH
+        remark: 新的备注内容
+    """
+    data = await _put(f"/stock-groups/{group_id}/stocks/{ts_code}", {"remark": remark})
     return _fmt(data)
 
 
