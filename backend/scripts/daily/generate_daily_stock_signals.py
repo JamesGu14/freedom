@@ -12,6 +12,7 @@ sys.path.append(str(SCRIPT_ROOT))
 
 from app.data.mongo import get_collection  # noqa: E402
 from app.data.mongo_daily_stock_signals import (  # noqa: E402
+    preserve_user_states,
     upsert_daily_stock_pattern_resonance,
     upsert_daily_stock_signal_resonance,
     upsert_daily_stock_signals,
@@ -78,6 +79,10 @@ def generate_for_date(trade_date: str) -> dict[str, object]:
     )
     signal_count = upsert_daily_stock_signals(signal_docs)
     resonance_count = upsert_daily_stock_signal_resonance(resonance_docs)
+    for doc in pattern_resonance_docs:
+        doc["stocks"] = preserve_user_states(
+            doc["trade_date"], doc["signal_side"], doc["resonance_level"], doc["stocks"]
+        )
     pattern_resonance_count = upsert_daily_stock_pattern_resonance(pattern_resonance_docs)
     return {
         "trade_date": trade_date,
@@ -103,6 +108,10 @@ def main() -> None:
     )
     signal_count = upsert_daily_stock_signals(signal_docs)
     resonance_count = upsert_daily_stock_signal_resonance(resonance_docs)
+    for doc in pattern_resonance_docs:
+        doc["stocks"] = preserve_user_states(
+            doc["trade_date"], doc["signal_side"], doc["resonance_level"], doc["stocks"]
+        )
     pattern_resonance_count = upsert_daily_stock_pattern_resonance(pattern_resonance_docs)
     logger.info(
         "generate_daily_stock_signals done: dates=%s signal_docs=%s resonance_docs=%s pattern_resonance_docs=%s",

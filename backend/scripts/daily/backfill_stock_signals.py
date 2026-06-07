@@ -12,6 +12,7 @@ sys.path.append(str(SCRIPT_ROOT))
 
 from app.data.mongo import get_collection
 from app.data.mongo_daily_stock_signals import (
+    preserve_user_states,
     upsert_daily_stock_pattern_resonance,
     upsert_daily_stock_signal_resonance,
     upsert_daily_stock_signals,
@@ -75,6 +76,10 @@ def process_batch(dates: list[str], dry_run: bool = False) -> dict[str, int]:
     
     signal_count = upsert_daily_stock_signals(signal_docs)
     resonance_count = upsert_daily_stock_signal_resonance(resonance_docs)
+    for doc in pattern_resonance_docs:
+        doc["stocks"] = preserve_user_states(
+            doc["trade_date"], doc["signal_side"], doc["resonance_level"], doc["stocks"]
+        )
     pattern_resonance_count = upsert_daily_stock_pattern_resonance(pattern_resonance_docs)
     
     logger.info(f"Batch complete: signal_docs={signal_count}, resonance_docs={resonance_count}, pattern_resonance_docs={pattern_resonance_count}")

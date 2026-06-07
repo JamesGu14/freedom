@@ -411,18 +411,27 @@ const StockList = ({ stocks = [], tradeDate = "" }) => {
 
   useEffect(() => { setPage(1); }, [stocks]);
 
+  const sortedStocks = useMemo(() => {
+    return [...stocks].sort((a, b) => {
+      const aAck = a.user_state === "acknowledged" ? 1 : 0;
+      const bAck = b.user_state === "acknowledged" ? 1 : 0;
+      if (aAck !== bAck) return bAck - aAck;
+      return 0;
+    });
+  }, [stocks]);
+
   if (!stocks.length) {
     return <div className="signal-empty">当日无命中</div>;
   }
 
-  const totalPages = Math.ceil(stocks.length / PAGE_SIZE);
-  const pageItems = stocks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.ceil(sortedStocks.length / PAGE_SIZE);
+  const pageItems = sortedStocks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
       <div className="signal-stock-grid">
         {pageItems.map((item) => (
-          <div key={`${item.ts_code}-${item.signal_count || item.signal_count_same_side || item.weighted_score || 0}`} className="signal-stock-cell">
+          <div key={`${item.ts_code}-${item.signal_count || item.signal_count_same_side || item.weighted_score || 0}`} className={`signal-stock-cell ${item.user_state === "acknowledged" ? "signal-stock-cell--acknowledged" : ""}`}>
             <div className="signal-stock-cell__head">
               <span className="signal-stock-cell__name">{item.name || item.ts_code}</span>
               <span className="signal-stock-cell__code">{item.ts_code}</span>
@@ -490,7 +499,17 @@ const ResonanceCard = ({ group }) => (
   <section className="signal-card resonance-card">
     <div className="signal-card__header">
       <h3>{getResonanceLabel(group.resonance_level)}</h3>
-      <span className="signal-card__count">{group.count || 0} 只</span>
+      <div className="signal-card__header-right">
+        <span className="signal-card__count">{group.count || 0} 只</span>
+        {group.count > 0 && (
+          <Link
+            href={`/resonance-details?trade_date=${group.trade_date}&signal_side=${group.signal_side}&resonance_level=${group.resonance_level}`}
+            className="resonance-detail-btn"
+          >
+            详情
+          </Link>
+        )}
+      </div>
     </div>
     <StockList stocks={group.stocks || []} tradeDate={group.trade_date} />
   </section>

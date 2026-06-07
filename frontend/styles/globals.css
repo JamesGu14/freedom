@@ -676,18 +676,19 @@ body {
 
 .signal-stock-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
 }
 
 .signal-stock-cell {
-  padding: 10px 12px;
+  padding: 6px 8px;
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   transition: border-color 0.15s;
+  min-width: 0;
 }
 
 .signal-stock-cell:hover {
@@ -698,49 +699,54 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .signal-stock-cell__name {
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .signal-stock-cell__code {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   flex-shrink: 0;
 }
 
 .signal-stock-cell__info {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 8px;
+  gap: 1px 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.3;
 }
 
 .signal-stock-cell__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
+  gap: 2px;
+  margin-top: 1px;
 }
 
 .signal-stock-cell__foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   margin-top: auto;
+  gap: 4px;
 }
 
 .signal-stock-cell__foot .link-button {
-  font-size: 11px;
+  font-size: 10px;
+  padding: 1px 4px;
 }
 
 .text-red { color: #e74c3c; }
@@ -4312,4 +4318,153 @@ td:first-child {
   width: 12px;
   height: 12px;
   border-radius: 3px;
+}
+
+.signal-stock-cell--acknowledged {
+  border: 2px solid #f59e0b;
+  background-color: rgba(245, 158, 11, 0.05);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+}
+
+.resonance-detail-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: white;
+  text-decoration: none;
+  font-size: 13px;
+  margin-left: 8px;
+}
+
+.resonance-detail-btn:hover {
+  background: var(--accent-dark);
+}
+
+/* 详情页 - 股票卡片 */
+.stock-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: var(--card-bg);
+}
+
+.stock-detail-card.acknowledged {
+  border: 2px solid #f59e0b;
+  background-color: rgba(245, 158, 11, 0.03);
+}
+
+.stock-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.stock-detail-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.stock-detail-chart {
+  width: 100%;
+  border-radius: 4px;
+  background: var(--chart-bg);
+}
+
+.chart-loading,
+.chart-error {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--card-bg);
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+
+.chart-error {
+  color: var(--error);
+}
+
+.stock-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+.stock-detail-actions button {
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.stock-detail-actions button:hover {
+  background: var(--btn-hover-bg);
+}
+
+.stock-detail-actions button:first-child {
+  color: var(--muted);
+}
+
+.stock-detail-actions button:last-child {
+  background: #f59e0b;
+  color: white;
+  border-color: #f59e0b;
+}
+
+.stock-detail-actions button:last-child:hover {
+  background: #d97706;
+}
+
+/* 筛选器 */
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.filter-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* 详情页列表 */
+.resonance-detail-list {
+  margin-top: 16px;
+}
+
+.signal-stock-cell__tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.signal-tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-subtle);
+  color: var(--accent-dark);
+  font-size: 12px;
 }

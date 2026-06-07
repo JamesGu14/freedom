@@ -631,6 +631,23 @@ async def get_daily_stock_signals_overview(
 
 
 @mcp.tool()
+async def get_signal_statistics(
+    trade_date: Optional[str] = None,
+) -> str:
+    """获取强共振信号统计数据。
+    统计过去3/5/10天内出现强共振（9+ patterns）或极强共振（14+ patterns）的股票频次，
+    帮助发现近期持续发出强信号的股票。
+
+    Args:
+        trade_date: 截止日期，格式 YYYYMMDD，不填则取最新信号日
+    """
+    data = await _get("/daily-stock-signals/statistics", {
+        "trade_date": trade_date,
+    })
+    return _fmt(data)
+
+
+@mcp.tool()
 async def list_strategies() -> str:
     """获取系统中所有可用的交易策略列表。"""
     data = await _get("/strategies")

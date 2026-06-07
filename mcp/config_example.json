@@ -4,7 +4,7 @@
       "command": "python",
       "args": ["/home/james/projects/freedom/mcp/freedom_mcp_server.py"],
       "env": {
-        "FREEDOM_API_BASE_URL": "http://localhost:9000/api",
+        "FREEDOM_API_BASE_URL": "http://192.168.0.109:9000/api",
         "FREEDOM_API_TOKEN": "<your_bearer_token>"
       }
     }
