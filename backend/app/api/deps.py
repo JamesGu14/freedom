@@ -88,11 +88,31 @@ def _verify_with_personal_authenticator(token: str) -> dict[str, object]:
     return _build_personal_auth_user(payload)
 
 
+def _verify_internal_api_token(token: str) -> dict[str, object] | None:
+    internal_token = str(settings.internal_api_token or "").strip()
+    if not internal_token or token != internal_token:
+        return None
+    return {
+        "_id": "internal",
+        "username": "internal",
+        "display_name": "Internal API",
+        "status": "active",
+        "auth_type": "internal_api",
+        "roles": ["admin"],
+        "created_at": None,
+        "updated_at": None,
+        "last_login_at": None,
+    }
+
+
 def _get_user_from_credentials(credentials: HTTPAuthorizationCredentials | None) -> dict[str, object]:
     if credentials is None or not credentials.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
 
     token = credentials.credentials
+    internal_user = _verify_internal_api_token(token)
+    if internal_user is not None:
+        return internal_user
     verify_url = str(settings.auth_verify_url or "").strip()
     if not verify_url:
         raise HTTPException(

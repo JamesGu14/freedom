@@ -19,6 +19,7 @@ services:
       AI_RUNNER_MAX_RETRIES: ${AI_RUNNER_MAX_RETRIES:-2}
       AUTH_LOGIN_URL: ${AUTH_LOGIN_URL:-http://personal-authenticator-app:3900/v1/auth/login}
       AUTH_VERIFY_URL: ${AUTH_VERIFY_URL:-http://personal-authenticator-app:3900/v1/internal/verify}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

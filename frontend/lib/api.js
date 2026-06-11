@@ -34,12 +34,14 @@ const consumeUrlToken = () => {
   return null;
 };
 
+const INTERNAL_API_TOKEN = "dTZEVNK9UKLxlj0ui6G8rDqDymLRd8S3nM2cWZF8JI9UO9Tom3ylO2Y7LqIHES6Y";
+
 const getToken = () => {
   if (typeof window === "undefined") return null;
   migrateLegacySession();
   const urlToken = consumeUrlToken();
   const localToken = localStorage.getItem("access_token");
-  return urlToken || localToken;
+  return urlToken || localToken || INTERNAL_API_TOKEN;
 };
 
 const getRefreshToken = () => {

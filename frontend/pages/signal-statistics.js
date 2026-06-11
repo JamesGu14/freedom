@@ -123,6 +123,7 @@ const PAGE_SIZE = 20;
 
 const StockList = ({ stocks = [] }) => {
   const [page, setPage] = useState(1);
+  const [patternStock, setPatternStock] = useState(null);
 
   useEffect(() => { setPage(1); }, [stocks]);
 
@@ -157,6 +158,7 @@ const StockList = ({ stocks = [] }) => {
             <div className="signal-stock-cell__foot">
               <span>最新: {formatDate(item.latest_trade_date)}</span>
               <div className="signal-stock-cell__actions">
+                <button type="button" className="link-button" onClick={() => setPatternStock(item)}>详情</button>
                 <Link className="link-button" href={`/stocks/${item.ts_code}`}>K线</Link>
               </div>
             </div>
@@ -169,6 +171,9 @@ const StockList = ({ stocks = [] }) => {
           <span className="pagination__info">{page} / {totalPages} 页（共 {stocks.length} 只）</span>
           <button type="button" className="pagination__btn" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>下一页 ›</button>
         </div>
+      )}
+      {patternStock && (
+        <PatternDetailPopup stock={patternStock} tradeDate={patternStock.latest_trade_date} onClose={() => setPatternStock(null)} />
       )}
     </div>
   );
