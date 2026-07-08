@@ -429,7 +429,7 @@ const StockList = ({ stocks = [], tradeDate = "" }) => {
 
   return (
     <div>
-      <div className="signal-stock-grid">
+      <div className="signal-stock-grid signal-stock-grid--resonance">
         {pageItems.map((item) => (
           <div key={`${item.ts_code}-${item.signal_count || item.signal_count_same_side || item.weighted_score || 0}`} className={`signal-stock-cell ${item.user_state === "acknowledged" ? "signal-stock-cell--acknowledged" : ""}`}>
             <div className="signal-stock-cell__head">
