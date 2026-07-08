@@ -1,0 +1,15 @@
+# Development override for hot-reload of the new dark theme and frontend changes.
+# Use with: docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up
+# Production builds should use: docker compose -f docker-compose.yaml up --build
+services:
+  frontend:
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      # Preserve build-time dependencies and build cache inside the container
+      - /app/node_modules
+      - /app/.next

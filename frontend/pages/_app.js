@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState, useCallback } from "react";
 import { AuthProvider, useAuth } from "../lib/auth";
 import { getToken } from "../lib/api";
+import { ThemeToggle } from "../components/ThemeToggle";
 
 /* ── Inline SVG icon wrapper (Feather-style, 18×18) ── */
 function Ico({ children }) {
@@ -213,6 +214,20 @@ function AppShell({ Component, pageProps }) {
       <Head>
         <title>Freedom Quant</title>
         <link rel="icon" href="/freedom/favicon.ico" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem("freedom:theme");
+                  if (theme !== "light") {
+                    document.documentElement.classList.add("dark");
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </Head>
 
       {/* Mobile backdrop */}
@@ -330,7 +345,13 @@ function AppShell({ Component, pageProps }) {
 
         {/* ── Main content ── */}
         <div className="app-main">
-          <Component {...pageProps} />
+          <header className="app-header">
+            <span className="app-header__title">Freedom Quant</span>
+            <ThemeToggle className="app-header__theme-toggle" />
+          </header>
+          <div className="app-page">
+            <Component {...pageProps} />
+          </div>
         </div>
       </div>
     </>
