@@ -168,7 +168,7 @@ logs/data_audit/<run_id>/
 
 - 审计报告：`logs/data_audit/full_audit_20260314_all_green_final/`
 - 结果：`12 / 12 green`
-- Airflow 周期任务：`backend/airflow/dags/freedom_data_integrity_weekly.py`
+- Airflow 周期任务：shared Airflow 的 `freedom_data_integrity_weekly` DAG（本仓库旧 DAG 已移除）
   - 调度：每周六 `06:00` `Asia/Shanghai`
   - Mongo 落库集合：`data_integrity_audit_runs`
   - 共享部署：`/home/james/projects/ai-personal-os/infra/shared-infra/airflow/dags/freedom_data_integrity_weekly.py`
@@ -455,7 +455,9 @@ GET /api/signal?strategy_id=&trade_date=&ts_code=
 - 数据完整性审计已经额外支持一个独立 Airflow DAG：
   - DAG ID：`freedom_data_integrity_weekly`
   - 调度：每周六 `06:00`
-  - 行为：共享 Airflow 先异步触发 Freedom 内部审计 run，再轮询其完成状态
+  - 行为：共享 Airflow 通过 SSH 调用宿主机 `scripts/run_freedom_sync_job.sh`，运行 `python -m scripts.audit.run_data_integrity_audit_runner --run-id <run_id> --trigger-source airflow_weekly --last-trade-days 20`，检查最近 20 个交易日
+  - 手动 HTTP 入口仍保留，由后端启动独立子进程执行相同 runner；超时的排队/运行任务会在查询或再次触发时标为失败
+  - 审计结果告警：在宿主机 `backend/.env` 配置 `FEISHU_AUDIT_WEBHOOK_URL`；Docker 部署需将该变量导出到 Compose 环境或通过 `--env-file backend/.env` 提供
   - 落库：审计运行状态与摘要统一写入 MongoDB `data_integrity_audit_runs`
   - 共享 Airflow 部署路径：`/home/james/projects/ai-personal-os/infra/shared-infra/airflow/dags/freedom_data_integrity_weekly.py`
 

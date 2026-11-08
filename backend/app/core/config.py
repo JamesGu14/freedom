@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     ai_runner_max_retries: int = 2
 
     feishu_webhook_url: str | None = None
+    feishu_audit_webhook_url: str | None = None
 
 
 settings = Settings()

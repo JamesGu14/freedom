@@ -10,6 +10,7 @@ from pathlib import Path
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(SCRIPT_ROOT))
 
+from app.core.cache import cache_delete_pattern  # noqa: E402
 from app.data.mongo import get_collection  # noqa: E402
 from app.data.mongo_daily_stock_signals import (  # noqa: E402
     preserve_user_states,
@@ -113,6 +114,21 @@ def main() -> None:
             doc["trade_date"], doc["signal_side"], doc["resonance_level"], doc["stocks"]
         )
     pattern_resonance_count = upsert_daily_stock_pattern_resonance(pattern_resonance_docs)
+
+    for trade_date in dates:
+        deleted = cache_delete_pattern(f"signals:overview:{trade_date}:*")
+        if deleted:
+            logger.info("cleared overview cache for %s: %s keys", trade_date, deleted)
+        deleted_stats = cache_delete_pattern(f"signals:statistics:{trade_date}")
+        if deleted_stats:
+            logger.info("cleared statistics cache for %s: %s keys", trade_date, deleted_stats)
+        deleted_stock = cache_delete_pattern("signals:stock:*")
+        if deleted_stock:
+            logger.info("cleared stock signal cache: %s keys", deleted_stock)
+        deleted_patterns = cache_delete_pattern("signals:patterns:*")
+        if deleted_patterns:
+            logger.info("cleared pattern detail cache: %s keys", deleted_patterns)
+
     logger.info(
         "generate_daily_stock_signals done: dates=%s signal_docs=%s resonance_docs=%s pattern_resonance_docs=%s",
         len(dates),

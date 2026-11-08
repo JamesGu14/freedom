@@ -3,7 +3,8 @@
 
 Supports datasets: daily, daily_basic, daily_limit, indicators, adj_factor,
 margin_detail, stk_holdernumber, income, balancesheet, cashflow,
-fina_indicator, all.
+fina_indicator, disclosure_date, moneyflow_dc, cyq_perf, fina_audit, forecast,
+express, all.
 Deduplicates by dataset-specific keys (default: ts_code + trade_date), keeping
 the record from the latest file.
 Crash-safe: writes to temp file, renames to final, then deletes old parts.
@@ -11,6 +12,7 @@ Crash-safe: writes to temp file, renames to final, then deletes old parts.
 from __future__ import annotations
 
 import argparse
+import os
 import datetime as dt
 import logging
 import sys
@@ -38,6 +40,11 @@ DATASET_DIRS = {
     "cashflow": "raw/cashflow",
     "fina_indicator": "raw/fina_indicator",
     "disclosure_date": "raw/disclosure_date",
+    "moneyflow_dc": "features/moneyflow_dc",
+    "cyq_perf": "features/cyq_perf",
+    "fina_audit": "raw/fina_audit",
+    "forecast": "raw/forecast",
+    "express": "raw/express",
 }
 
 DEDUP_KEYS = {
@@ -53,6 +60,11 @@ DEDUP_KEYS = {
     "cashflow": ["ts_code", "end_date", "ann_date"],
     "fina_indicator": ["ts_code", "end_date", "ann_date"],
     "disclosure_date": ["ts_code", "end_date", "ann_date"],
+    "moneyflow_dc": ["ts_code", "trade_date"],
+    "cyq_perf": ["ts_code", "trade_date"],
+    "fina_audit": ["ts_code", "end_date", "ann_date"],
+    "forecast": ["ts_code", "end_date", "ann_date", "type"],
+    "express": ["ts_code", "end_date", "ann_date"],
 }
 
 
@@ -130,28 +142,35 @@ def compact_partition(partition_dir: Path, dedup_keys: list[str] | None = None) 
         return 0, 0
 
     tmp_path = partition_dir / f"compact-{uuid.uuid4().hex}.parquet"
-    part_glob = str(partition_dir / "part-*.parquet")
+    # Writers use random UUID names, which do not encode ingestion order.
+    # Snapshot both paths and modification times before reading the partition.
+    part_paths_sql = ["'" + str(part).replace("'", "''") + "'" for part in parts]
+    part_list_sql = "[" + ", ".join(part_paths_sql) + "]"
+    part_mtimes = [part.stat().st_mtime_ns for part in parts]
+    freshness_sql = "CASE filename " + " ".join(
+        f"WHEN {path_sql} THEN {mtime}"
+        for path_sql, mtime in zip(part_paths_sql, part_mtimes)
+    ) + " END"
 
     with duckdb.connect() as con:
-        part_glob_sql = part_glob.replace("'", "''")
         tmp_path_sql = str(tmp_path).replace("'", "''")
 
-        # Use filename=true so we can ORDER BY filename DESC to keep latest file's record
+        # Keep the most recently written record; filename breaks timestamp ties.
         keys = dedup_keys or ["ts_code", "trade_date"]
         partition_keys_sql = ", ".join(keys)
         order_keys_sql = ", ".join(keys)
 
         select_sql = (
             "SELECT * EXCLUDE (filename) "
-            "FROM read_parquet('{glob}', filename=true, union_by_name=true) "
+            "FROM read_parquet({parts}, filename=true, union_by_name=true) "
             "QUALIFY row_number() OVER "
-            "(PARTITION BY {keys} ORDER BY filename DESC) = 1"
-        ).format(glob=part_glob_sql, keys=partition_keys_sql)
+            "(PARTITION BY {keys} ORDER BY {freshness} DESC, filename DESC) = 1"
+        ).format(parts=part_list_sql, keys=partition_keys_sql, freshness=freshness_sql)
         order_sql = f" ORDER BY {order_keys_sql}"
 
         # Safety check: count before and after dedup
         before_count = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{part_glob_sql}', union_by_name=true)"
+            f"SELECT COUNT(*) FROM read_parquet({part_list_sql}, union_by_name=true)"
         ).fetchone()[0]
         after_count = con.execute(
             f"SELECT COUNT(*) FROM ({select_sql})"
@@ -178,6 +197,9 @@ def compact_partition(partition_dir: Path, dedup_keys: list[str] | None = None) 
             raise RuntimeError(f"empty output for {partition_dir}")
 
     # Crash-safe: rename temp to final FIRST, then delete old parts
+    # Compaction must not make old rows newer than writes arriving after the snapshot.
+    latest_input_mtime = max(part_mtimes)
+    os.utime(tmp_path, ns=(latest_input_mtime, latest_input_mtime))
     final_path = partition_dir / "part-0000.parquet"
     tmp_path.replace(final_path)
 
@@ -223,7 +245,7 @@ def compact_dataset(
                 removed, written = compact_partition(partition_dir, dedup_keys=dedup_keys)
                 total_removed += removed
                 total_written += written
-            except (OSError, IOError, duckdb.IOException) as e:
+            except (OSError, IOError, duckdb.Error) as e:
                 logger.warning("skip %s: %s", partition_dir, e)
                 continue
             if progress_bar_enabled:

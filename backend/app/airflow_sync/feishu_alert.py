@@ -15,6 +15,8 @@ FEISHU_WEBHOOK_URL = (
 )
 FEISHU_SIGNATURE_SECRET = "E7fpEuRyTeETv3awZHGRzh"
 
+_AUDIT_KEYWORD_PREFIX = "freedom data-integrity alert"
+
 
 def _generate_sign(secret: str, timestamp: int) -> str:
     """Generate Feishu webhook signature."""
@@ -49,6 +51,37 @@ def send_feishu_alert(title: str, content: str) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url=FEISHU_WEBHOOK_URL,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def send_feishu_audit_alert(content: str) -> dict[str, Any]:
+    """Send a data-integrity gap alert via the keyword-protected bot.
+
+    The audit bot uses Feishu's custom-keyword security: it rejects any
+    message whose text does not contain both "freedom" and "alert". The
+    prefix is enforced here so callers cannot accidentally drop a keyword
+    and silently lose the alert.
+    """
+    from app.core.config import settings
+
+    webhook_url = settings.feishu_audit_webhook_url
+    if not webhook_url:
+        return {"skipped": "feishu_audit_webhook_url not configured"}
+
+    text = f"{_AUDIT_KEYWORD_PREFIX}\n\n{content}"
+    payload = {"msg_type": "text", "content": {"text": text}}
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url=webhook_url,
         data=body,
         headers={"Content-Type": "application/json"},
         method="POST",

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from collections import Counter
 from typing import Any
 
+from app.audit.summary_builder import build_audit_run_document
 from app.audit.models import AuditRunResult
 from app.data.mongo_data_integrity_audit import upsert_data_integrity_audit_run
 from scripts.audit.run_data_integrity_audit import run_audit
+
+
+WEEKLY_SCHEDULE = "0 6 * * 6"
 
 
 def build_airflow_audit_run_document(
@@ -15,39 +18,13 @@ def build_airflow_audit_run_document(
     task_id: str,
     scheduled_for: str,
 ) -> dict[str, Any]:
-    statuses = Counter(item.status for item in result.datasets)
-    datasets = []
-    for item in result.datasets:
-        datasets.append(
-            {
-                "dataset": item.dataset,
-                "status": item.status,
-                "missing_dates": len(item.date_gap.missing_trade_dates),
-                "coverage_anomalies": len(item.coverage_anomalies),
-                "rowcount_anomalies": len(item.rowcount_anomalies),
-                "local_min_date": item.local_min_date,
-                "local_max_date": item.local_max_date,
-            }
-        )
-    return {
-        "run_id": result.run_id,
-        "dag_id": dag_id,
-        "task_id": task_id,
-        "schedule": "0 6 * * 6",
-        "scheduled_for": scheduled_for,
-        "output_dir": result.output_dir,
-        "status_summary": {
-            "green": int(statuses.get("green", 0)),
-            "yellow": int(statuses.get("yellow", 0)),
-            "red": int(statuses.get("red", 0)),
-        },
-        "datasets": datasets,
-        "summary": {
-            "output_dir": result.output_dir,
-            "excluded_datasets": list(result.excluded_datasets),
-            "dataset_count": len(result.datasets),
-        },
-    }
+    return build_audit_run_document(
+        result=result,
+        dag_id=dag_id,
+        task_id=task_id,
+        scheduled_for=scheduled_for,
+        schedule=WEEKLY_SCHEDULE,
+    )
 
 
 def persist_airflow_audit_run(payload: dict[str, Any]) -> None:

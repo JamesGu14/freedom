@@ -1,5 +1,6 @@
 services:
   backend:
+    restart: unless-stopped
     build:
       context: ./backend
     expose:
@@ -21,6 +22,7 @@ services:
       AUTH_VERIFY_URL: ${AUTH_VERIFY_URL:-http://personal-authenticator-app:3900/v1/internal/verify}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
+      FEISHU_AUDIT_WEBHOOK_URL: ${FEISHU_AUDIT_WEBHOOK_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -35,6 +37,7 @@ services:
           - freedom-backend
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./frontend
       args:
@@ -45,6 +48,7 @@ services:
       - backend
 
   mongodb:
+    restart: unless-stopped
     image: mongo:7
     ports:
       - "27017:27017"
